@@ -8,7 +8,9 @@ In Lua, Lisp, and many other dynamic languages, all or some objects are stored a
 
 JOIA pushes this ingenius idea to a higher level. 
 
-JOIA use a global hash table to store the Indirect Address for each child object (members) inside a parent object. There is a global hash scheme. As long as the function get the object reference, and the property name, it can quickly figure out the Indirect Address of the child object, and fetch its reference (Physical Address) from the Indirect Addressing Table.
+JOIA use a global hash table to store the Indirect Address for each child object (Property) of a parent object. 
+
+There is a universal hash algorithm. As long as the function get the object reference, and the property name, it can quickly figure out the Indirect Address of the child object, and fetch its reference from the Indirect Addressing Table.
 
 Further more, two other optimization is also added. 
 
