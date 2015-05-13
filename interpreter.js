@@ -49,45 +49,123 @@ Interpreter.prototype.step = function() {
   if (this.stateStack.length == 0) {
     return false;
   }
+  
+  // print statestack
+  console.log("=== state stack begin ===");
+  for (var i = 0; i < this.stateStack.length; i++) {
+    console.log(this.stateStack[i].node.type);
+  }
+  console.log("===  state stack end  ===");
+  
   var state = this.stateStack[0];
   // this['step' + state.node.type]();
   switch (state.node.type)
   {
-  case 'ArrayExpression' 		: 	this.stepArrayExpression(); 		break;
-  case 'AssignmentExpression' 	: 	this.stepAssignmentExpression(); 	break;
-  case 'BinaryExpression'		:	this.stepBinaryExpression();		break;
-  case 'BreakStatement'			:	this.stepBreakStatement();			break;
-  case 'BlockStatement'			:	this.stepBlockStatement();			break;
-  case 'CallExpression'			:	this.stepCallExpression();			break;
-  case 'ConditionalExpression'	:	this.stepConditionalExpression();	break;
-  case 'ContinueStatement'		:	this.stepContinueStatement();		break;
-  case 'DoWhileStatement' 		:	this.stepDoWhileStatement();		break;
-  case 'EmptyStatement'			:	this.stepEmptyStatement();			break;
-  case 'Eval_'					:	this.stepEval_();					break;
-  case 'ExpressionStatement'	:	this.stepExpressionStatement();		break;
-  case 'ForInStatement'			:	this.stepForInStatement();			break;
-  case 'ForStatement'			: 	this.stepForStatement();			break;
-  case 'FunctionDeclaration'	:	this.stepFunctionDeclaration();		break;
-  case 'FunctionExpression'		: 	this.stepFunctionExpression();		break;
-  case 'Identifier'				:	this.stepIdentifier();				break;
-  case 'IfStatement'			:	this.stepIfStatement();				break;
-  case 'LabeledStatement'		:	this.stepLabeledStatement();		break;
-  case 'Literal'				:	this.stepLiteral();					break;
-  case 'LogicalExpression'		:	this.stepLogicalExpression();		break;
-  case 'MemberExpression'		:	this.stepMemberExpression();		break;
-  case 'NewExpression'			: 	this.stepNewExpression();			break;
-  case 'ObjectExpression'		:	this.stepObjectExpression();		break;
-  case 'Program'				:	this.stepProgram();					break;
-  case 'ReturnStatement'		: 	this.stepReturnStatement();			break;
-  case 'SequenceExpression'		: 	this.stepSequenceExpression();		break;
-  case 'SwitchStatement'		:	this.stepSwitchStatement();			break;
-  case 'ThisExpression'			: 	this.stepThisExpression();			break;
-  case 'ThrowStatement'			: 	this.stepThrowStatement();			break;
-  case 'UnaryExpression'		:	this.stepUnaryExpression();			break;
-  case 'UpdateExpression'		:	this.stepUpdateExpression();		break;
-  case 'VariableDeclaration'	:	this.stepVariableDeclaration();		break;
-  case 'VariableDeclarator'		: 	this.stepVariableDeclarator();		break;
-  case 'WhileStatement'			:	this.stepWhileStatement();			break;
+  case 'ArrayExpression':
+    this.stepArrayExpression();
+    break;
+  case 'AssignmentExpression':
+    this.stepAssignmentExpression();
+    break;
+  case 'BinaryExpression':
+    this.stepBinaryExpression();
+    break;
+  case 'BreakStatement':
+    this.stepBreakStatement();
+    break;
+  case 'BlockStatement':
+    this.stepBlockStatement();
+    break;
+  case 'CallExpression':
+    this.stepCallExpression();
+    break;
+  case 'ConditionalExpression':
+    this.stepConditionalExpression();
+    break;
+  case 'ContinueStatement':
+    this.stepContinueStatement();
+    break;
+  case 'DoWhileStatement':
+    this.stepDoWhileStatement();
+    break;
+  case 'EmptyStatement':
+    this.stepEmptyStatement();
+    break;
+  case 'Eval_':
+    this.stepEval_();
+    break;
+  case 'ExpressionStatement':
+    this.stepExpressionStatement();
+    break;
+  case 'ForInStatement':
+    this.stepForInStatement();
+    break;
+  case 'ForStatement':
+    this.stepForStatement();
+    break;
+  case 'FunctionDeclaration':
+    this.stepFunctionDeclaration();
+    break;
+  case 'FunctionExpression':
+    this.stepFunctionExpression();
+    break;
+  case 'Identifier':
+    this.stepIdentifier();
+    break;
+  case 'IfStatement':
+    this.stepIfStatement();
+    break;
+  case 'LabeledStatement':
+    this.stepLabeledStatement();
+    break;
+  case 'Literal':
+    this.stepLiteral();
+    break;
+  case 'LogicalExpression':
+    this.stepLogicalExpression();
+    break;
+  case 'MemberExpression':
+    this.stepMemberExpression();
+    break;
+  case 'NewExpression':
+    this.stepNewExpression();
+    break;
+  case 'ObjectExpression':
+    this.stepObjectExpression();
+    break;
+  case 'Program':
+    this.stepProgram();
+    break;
+  case 'ReturnStatement':
+    this.stepReturnStatement();
+    break;
+  case 'SequenceExpression':
+    this.stepSequenceExpression();
+    break;
+  case 'SwitchStatement':
+    this.stepSwitchStatement();
+    break;
+  case 'ThisExpression':
+    this.stepThisExpression();
+    break;
+  case 'ThrowStatement':
+    this.stepThrowStatement();
+    break;
+  case 'UnaryExpression':
+    this.stepUnaryExpression();
+    break;
+  case 'UpdateExpression':
+    this.stepUpdateExpression();
+    break;
+  case 'VariableDeclaration':
+    this.stepVariableDeclaration();
+    break;
+  case 'VariableDeclarator':
+    this.stepVariableDeclarator();
+    break;
+  case 'WhileStatement':
+    this.stepWhileStatement();
+    break;
   default:
 	  console.log("======== illegal or unsupported node type ===========");
   }

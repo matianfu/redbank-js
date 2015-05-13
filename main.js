@@ -4,9 +4,14 @@
 
 var JSInterpreter = require("./interpreter.js");
 
-var code = 'print("Hello World")';
+var hello = 'print("Hello World")';
+var simple_function = 
+  'var a = function() {    ' +
+  '  print("hello world"); ' +
+  '};                      ' +
+  'a();'
 
-var interpreter = JSInterpreter.BuildInterpreter(code);
+var interpreter = JSInterpreter.BuildInterpreter(simple_function);
 
 interpreter.run();
 		
