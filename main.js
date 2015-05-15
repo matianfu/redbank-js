@@ -16,7 +16,10 @@ var simple_function =
   'a("hello world");'
   
 var source = 
-  'var a = 1000;  '
+  'var a = 1000;  ' +
+  'function b(x) {' +
+  '  return x;    ' +
+  '};' 
 
 // var interpreter = JSInterpreter.BuildInterpreter(simple_function);
 // interpreter.run();
