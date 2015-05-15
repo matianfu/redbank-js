@@ -37,6 +37,10 @@ var Interpreter = function(code, opt_initFunc) {
   this.initFunc_ = opt_initFunc;
   this.UNDEFINED = this.createPrimitive(undefined);
   this.ast = esprima.parse(code);
+  
+  var ast_json = JSON.stringify(this.ast);
+  console.log(ast_json);
+  
   var scope = this.createScope(this.ast, null);
   this.stateStack = [{node: this.ast, scope: scope, thisExpression: scope}];
 };
@@ -244,7 +248,7 @@ Interpreter.prototype.initGlobalScope = function(scope) {
   wrapper = function(expr) {
     expr = expr || thisInterpreter.UNDEFINED;
     return thisInterpreter.createPrimitive(
-        console.log(expr.toString()));
+        console.log("||----------------------------- --> " + expr.toString()));
   }
   this.setProperty(scope, 'print', 
                    this.createNativeFunction(wrapper));
@@ -1599,6 +1603,8 @@ Interpreter.prototype.createScope = function(node, parentScope) {
     this.initGlobalScope(scope);
   }
   this.populateScope_(node, scope);
+  
+  console.log(scope);
   return scope;
 };
 
