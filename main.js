@@ -21,8 +21,62 @@ var source =
   '  return x;    ' +
   '};' 
 
-// var interpreter = JSInterpreter.BuildInterpreter(simple_function);
-// interpreter.run();
+var src_one_literal = 
+  '1000;'
+
+var src_add_literal = '2 + 3 * 5;'
+  
+var src_expr_literal_ellipsis = '(2 + 3) * 5'
+
+var Y = function(F) {
+  return (function(x) {
+    return F(function(y) {
+      return x(x)(y);
+    });
+  })(function(x) {
+    return F(function(y) {
+      return x(x)(y);
+    });
+  });
+};  
+  
+var src_y_combinator = 
+'var Y = function(F) {          ' +
+'  return (function(x) {        ' +
+'    return F(function(y) {     ' +
+'      return x(x)(y);          ' +
+'    });                        ' +
+'  })(function(x) {             ' +
+'    return F(function(y) {     ' +
+'      return x(x)(y);          ' +
+'    });                        ' +
+'  });                          ' +
+'};'    
+
+var src_test_identifier = 
+'var a = 42, z;                 ' +
+'var b = 5;                     ' +
+'function addA(d) {             ' +
+'    return a + d;              ' +
+'}                              ' +
+'var c = addA(2) + b;           ' +
+'var e = function(x) { return a + x } '
+
+
+//var factorial = function(self) {
+//  return function(n) {
+//    return n === 0 ? 1 : n * self(n - 1);
+//  };
+//};
+//
+//var result;
+//console.log(result = Y(factorial)(4));  
+  
+var source = src_test_identifier;
+
+var interpreter = JSInterpreter.BuildInterpreter(source);
+
+interpreter.run();
 
 //stepArrayExpression
 //stepAssignmentExpression
@@ -63,6 +117,7 @@ var source =
 var Esprima_Main = require("./esprima.js");
 var ESCodegen_Main = require("./escodegen.js");
 
+
 var ast = Esprima_Main.parse(source);
 var ast_json = JSON.stringify(ast, null, 2);
 console.log(ast_json);
@@ -71,6 +126,9 @@ var generated = ESCodegen_Main.generate(ast, undefined);
 
 console.log(generated);
 
+var astcompiler = require("./astcompiler.js");
+
+var compiled = astcompiler.compile(ast);
 
 
 
