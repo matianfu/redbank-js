@@ -312,7 +312,7 @@ function build_function_tree(node) {
       };
 
       // reverse annotation for debug
-      astnode.function_uid = fnode.uid;
+      astnode.fnode = fnode;
 
       rootnode = fnode;
       currentFuncNode = fnode;
@@ -333,7 +333,7 @@ function build_function_tree(node) {
       };
 
       // reverse annotation for debug
-      astnode.function_uid = fnode.uid;
+      astnode.fnode = fnode;
 
       currentFuncNode.children.push(fnode);
       currentFuncNode = fnode;
@@ -678,7 +678,6 @@ function compileAssignmentExpression(fn, ast) {
 function compileAST(fn, ast) {
 
   // console.log("Compile : " + ast.type);
-
   switch (ast.type) {
   case "AssignmentExpression":
     compileAssignmentExpression(fn, ast);
@@ -686,6 +685,18 @@ function compileAST(fn, ast) {
 
   case "BinaryExpression":
     compileBinaryExpression(fn, ast);
+    break;
+
+  case "BlockStatement":
+    compileBlockStatement(fn, ast);
+    break;
+    
+  case "CallExpression":
+    compileCallExpression(fn, ast);
+    break;
+
+  case "FunctionExpression":
+    compileFunctionExpression(fn, ast);
     break;
 
   case "Program":
@@ -740,6 +751,62 @@ function compileBinaryExpression(fn, ast) {
     });
     break;
   }
+}
+
+// interface BlockStatement <: Statement {
+// type: "BlockStatement";
+// body: [ Statement ];
+// }
+function compileBlockStatement(fn, ast) {
+  
+  for (var i = 0; i < ast.body.length; i++) {
+    compileAST(fn, ast.body[i]);
+  }
+}
+
+// interface CallExpression <: Expression {
+// type: "CallExpression";
+// callee: Expression;
+// arguments: [ Expression ];
+// }
+function compileCallExpression(fn, ast) {
+  
+  compileAST(fn, ast.callee);
+  fn.emit({
+    op : "CALL"
+  });
+}
+
+// interface FunctionDeclaration <: Function, Declaration {
+// type: "FunctionDeclaration";
+// id: Identifier;
+// params: [ Pattern ];
+// defaults: [ Expression ];
+// rest: Identifier | null;
+// body: BlockStatement | Expression;
+// generator: boolean;
+// expression: boolean;
+// }
+function compileFunctionDeclaration(fn, ast) {
+
+}
+
+// interface FunctionExpression <: Function, Expression {
+// type: "FunctionExpression";
+// id: Identifier | null;
+// params: [ Pattern ];
+// defaults: [ Expression ];
+// rest: Identifier | null;
+// body: BlockStatement | Expression;
+// generator: boolean;
+// expression: boolean;
+// }
+function compileFunctionExpression(fn, ast) {
+  // construct function object
+  fn.emit({
+    op : 'FUNC',
+    arg1 : ast.fnode  // replace with offset in backpatching
+  });
 }
 
 // interface Identifier <: Node, Expression, Pattern {
@@ -880,7 +947,14 @@ function compileFN(fn) {
     arg1 : fn.locals.length
   });
 
-  compileAST(fn, fn.astnode);
+  if (fn.astnode.type === "Program") {
+    compileAST(fn, fn.astnode);
+  } else if (fn.astnode.type === "FunctionDeclaration"
+      || fn.astnode.type === "FunctionExpression") {
+    compileAST(fn, fn.astnode.body);
+  } else {
+    throw "Unexpected fnode ast type!";
+  }
 
   if (fn.code.length > 0 && fn.code[fn.code.length - 1].op !== "RET") {
     fn.emit({
@@ -890,12 +964,44 @@ function compileFN(fn) {
 }
 
 function compile_and_run(node) {
+  
+  var i;
 
   var fnroot = prepare(node);
 
   fnode_visit(fnroot, function(fn) {
     compileFN(fn);
   });
+
+  var array = [];
+
+  fnode_visit(fnroot, function(fn) {
+    array.push(fn);
+  });
+
+  if (array.length > 0) {
+    array.sort(function compare(a, b) {
+      return a.uid - b.uid;
+    });
+  }
+  
+  var offset = 0;
+  for (i = 0; i < array.length; i++) {
+    array[i].offset = offset;
+    offset += array[i].code.length;
+  }
+  
+  var merge = [];
+  for (i = 0; i < array.length; i++) {
+    merge = merge.concat(array[i].code);
+  }
+  
+  // back patching func address
+  for (i = 0; i < merge.length; i++) {
+    if (merge[i].op === "FUNC") {
+      merge[i].arg1 = merge[i].arg1.offset;
+    }
+  }
 
   var code = fnroot.code;
 
@@ -914,6 +1020,13 @@ exports.compile_and_run = compile_and_run;
 function ValueObject(value) {
   this.type = typeof value;
   this.value = value;
+  this.ref = 0;
+}
+
+function FuncObject(value) {
+  this.type = "function";
+  this.value = value;     // value is the jump position
+  this.display = [];      // hold freevar
   this.ref = 0;
 }
 
@@ -937,8 +1050,11 @@ function run(code) {
 
   var vm = {
 
-    // higher side is the top
-    fp_stack : [ 0 ],
+    pc : 0,
+    fp : 0,
+
+    pc_stack : [],
+    fp_stack : [],
 
     // stack store vars
     stack : [], // higher side is the top
@@ -1060,7 +1176,8 @@ function run(code) {
             var index = v.index;
 
             console.log(i + " : " + VT_OBJ + " " + index + ", val: "
-                + this.objects[index].value + ", ref: " + this.objects[index].ref);
+                + this.objects[index].value + ", ref: "
+                + this.objects[index].ref);
           } else if (v.type === VT_STK) {
 
             console.log(i + " : " + VT_STK + " " + v.index);
@@ -1091,6 +1208,21 @@ function run(code) {
       val = vm.pop();
       val = vm.pop() + val;
       obj = vm.objects.push(new ValueObject(val)) - 1;
+      v = new JSVar(VT_OBJ, obj);
+      vm.push(v);
+      break;
+      
+    case "CALL":
+      
+      vm.pc_stack.push(vm.pc);
+      // vm.pc = 
+      vm.fp_stack.push(vm.fp);
+      vm.fp = vm.stack.length;
+      break;
+      
+    case "FUNC":
+      val = bytecode.arg1;
+      obj = vm.objects.push(new FuncObject(val)) - 1;
       v = new JSVar(VT_OBJ, obj);
       vm.push(v);
       break;
@@ -1163,9 +1295,13 @@ function run(code) {
     }
   }
 
-  while (code.length > 0)
-    step(vm, code.shift());
+//  while (code.length > 0)
+//    step(vm, code.shift());
 
+  while (vm.pc < code.length) {
+    step(vm, code[vm.pc++]);
+  }
+  
   vm.printstack();
   vm.assert_no_leak();
 }

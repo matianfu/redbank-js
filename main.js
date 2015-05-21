@@ -18,35 +18,38 @@ var generate_source_with_escodegen = false;
  * test cases
  */
 var test_cases = [ {
-  name : "one_line_literal",  //  0
+  name : "one_line_literal", // 0
   text : '1000;',
 }, {
-  name : "one_line_expr_add", //  1
+  name : "one_line_expr_add", // 1
   text : '2 + 3;',
 }, {
   name : "one_line_expr_add_and_mul", // 2
   text : '2 + 3 * 5',
 }, {
-  name : "one_line_complex_add_and_mul",  // 3
+  name : "one_line_complex_add_and_mul", // 3
   text : '((2 + 3) * 5 + 5 * (7 + 2)) * 3',
 }, {
-  name : "var_declare",       // 4
+  name : "var_declare", // 4
   text : 'var a;'
 }, {
   name : "var_declare_and_assign", // 5
   text : 'var a; a = 10;',
 }, {
   name : "var_assign",
-  text : 'var a; var b; a = 10; b = a;'  // 6
+  text : 'var a; var b; a = 10; b = a;' // 6
 }, {
   name : "var_add_literal",
-  text : 'var a; a = 10; var b; b = a + 5;'  // 7
+  text : 'var a; a = 10; var b; b = a + 5;' // 7 fail
 }, {
-  name : "var_declare_and_init_literal",  // 8
+  name : "var_declare_and_init_literal", // 8 unknown
   text : 'var a = 10;'
+}, {
+  name : "empty_func_declaration", // 9
+  text : 'var a; a = function(){}; a();'
 } ]
 
-var source = test_cases[7].text;
+var source = test_cases[9].text;
 
 if (run_with_jsinterpreter) {
   var interpreter = JSInterpreter.BuildInterpreter(source);
