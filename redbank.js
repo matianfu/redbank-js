@@ -261,6 +261,10 @@ function fnode_visit(fnode, pre, post) {
     post(fnode);
 }
 
+function astlog(x) {
+  console.log(x);
+}
+
 /**
  * build the function node tree
  * 
@@ -288,8 +292,10 @@ function build_function_tree(node) {
     function emitcode(instruction) {
       this.code.push(instruction);
 
-      console.log('EMIT : ' + instruction.op + ' ' + instruction.arg1 + ' '
-          + instruction.arg2 + ' ' + instruction.arg3);
+      console.log('EMIT : ' + instruction.op + ' '
+          + ((instruction.arg1 === undefined) ? '' : instruction.arg1) + ' '
+          + ((instruction.arg2 === undefined) ? '' : instruction.arg2) + ' '
+          + ((instruction.arg3 === undefined) ? '' : instruction.arg3));
     }
 
     if (astnode.type == "Program") {
@@ -657,8 +663,15 @@ function prepare(astroot) {
 // right: Expression;
 // }
 function compileAssignmentExpression(fn, ast) {
+
+  astlog("compileAssignmentExpression");
+
   compileAST(fn, ast.left);
   compileAST(fn, ast.right);
+
+  fn.emit({
+    op : '=',
+  });
 }
 
 // dispatcher
@@ -876,7 +889,7 @@ function compileFN(fn) {
   }
 }
 
-function compile(node) {
+function compile_and_run(node) {
 
   var fnroot = prepare(node);
 
@@ -889,7 +902,7 @@ function compile(node) {
   run(code);
 }
 
-exports.compile = compile;
+exports.compile_and_run = compile_and_run;
 
 /*******************************************************************************
  * 
@@ -909,19 +922,23 @@ function JSVar(type, index) {
   this.index = index;
 }
 
+/**
+ * var type constant
+ */
+var VT_OBJ = "Object";
+var VT_FRV = "FreeVar";
+var VT_STK = "Stack";
+var VT_LIT = "Literal";
+var VT_NULL = "Null";
+
 function run(code) {
 
   console.log("-------------------- start running ---------------------");
 
-  var JS_OBJ = "Object";
-  var JS_FRV = "FreeVar";
-  var JS_STK = "StackVar";
-  var JS_LIT = "Literal";
-
   var vm = {
 
     // higher side is the top
-    fp : [ 0 ],
+    fp_stack : [ 0 ],
 
     // stack store vars
     stack : [], // higher side is the top
@@ -934,50 +951,101 @@ function run(code) {
     literals : [ 0 ],
 
     assert_no_leak : function() {
+      // check objects
       for (var i = 1; i < this.objects.length; i++) {
         if (this.objects[i] !== undefined) {
           console.log("mem leak @ object id: " + i);
         }
       }
+      // check display
+      // check stack
+      if (this.stack.length > 0) {
+        console.log("mem leak @ stack.")
+      }
+    },
+
+    ref_local : function(offset) {
+      var fp = this.fp_stack[this.fp_stack.length - 1];
+      return fp + offset;
     },
 
     // display variable not supported yet
     push : function(v) {
       this.stack.push(v);
 
-      if (v.type === JS_OBJ) {
+      if (v.type === VT_OBJ) {
         this.objects[v.index].ref++;
       }
     },
 
-    // suspicious
-    pushVal : function(val) {
-      var obj = this.objects.push(new ValueObject(val)) - 1;
-      var v = obj2var(obj);
-      this.push(v);
-    },
-
-    // pop any thing
+    // pop any thing, return value
     pop : function() {
-      var v = vm.stack.pop();
-      if (v.type === JS_OBJ) {
-        vm.objects[v.index].ref--;
-        if (vm.objects[v.index].ref === 0) {
-          vm.objects[v.index] = undefined;
+      var val, v = this.stack.pop();
+
+      if (v.type === VT_OBJ) {
+        val = this.objects[v.index].value;
+        this.objects[v.index].ref--;
+        if (this.objects[v.index].ref === 0) {
+          this.objects[v.index] = undefined;
         }
+        return val;
+      } else if (v.type === VT_NULL) {
+        // do nothing
       }
     },
 
-    popVal : function() {
-      var id = vm.stack.pop();
-      var val = vm.objects[id].value;
-      vm.objects[id].ref--;
-      return val;
+    // 
+    assign : function() {
+
+      var rv, lv, v;
+      rv = this.stack.pop();
+      lv = this.stack.pop();
+
+      if (lv.type === VT_STK) { // assign to locals
+
+        // free old lv
+        v = this.stack[lv.index];
+        switch (v.type) {
+        case VT_OBJ:
+          this.objects[v.index].ref--;
+          if (this.objects[v.index].ref === 0) {
+            this.objects[v.index] = undefined;
+          }
+          break;
+        }
+
+        if (rv.type === VT_OBJ) { // rvalue
+          this.stack[lv.index] = rv;
+          switch (rv.type) {
+          case VT_OBJ:
+            this.objects[rv.index].ref++;
+            break;
+          }
+
+          // push back, no need to increment ref count
+          this.stack.push(rv);
+        } else if (rv.type === VT_STK) {
+          rv = this.stack[rv.index];
+          this.stack[lv.index] = rv;
+          switch (rv.type) {
+          case VT_OBJ:
+            this.objects[rv.index].ref++;
+            break;
+          }
+
+          // push new, increment ref count
+          this.stack.push(rv);
+          this.objects[rv.index].ref++;
+        }
+
+      } else {
+        throw "not supported yet.";
+      }
     },
 
     span : function(x) {
       for (var i = 0; i < x; i++) {
-        this.stack.push(0);
+        this.stack.push(new JSVar(VT_NULL, 0));
       }
     },
 
@@ -985,11 +1053,26 @@ function run(code) {
       if (this.stack.length === 0) {
         console.log("STACK Empty");
       } else {
-        console.log("STACK size: " + this.stack.length + ", obj id: "
-            + this.stack[this.stack.length - 1]);
+        console.log("STACK size: " + this.stack.length);
+        for (var i = this.stack.length - 1; i >= 0; i--) {
+          var v = this.stack[i];
+          if (v.type == VT_OBJ) {
+            var index = v.index;
+
+            console.log(i + " : " + VT_OBJ + " " + index + ", val: "
+                + this.objects[index].value + ", ref: " + this.objects[index].ref);
+          } else if (v.type === VT_STK) {
+
+            console.log(i + " : " + VT_STK + " " + v.index);
+          } else {
+            console.log(i + " : " + v.type);
+          }
+        }
       }
+
+      console.log("----------------------------------");
     }
-  };
+  }
 
   function step(vm, bytecode) {
 
@@ -1000,26 +1083,33 @@ function run(code) {
     var v, obj;
     var id;
     var val;
+    var opd1, opd2;
 
     switch (bytecode.op) {
     case "ADD":
       // add stack top object and pop
-      val = vm.popVal() + vm.popVal();
-      vm.pushVal(val);
+      val = vm.pop();
+      val = vm.pop() + val;
+      obj = vm.objects.push(new ValueObject(val)) - 1;
+      v = new JSVar(VT_OBJ, obj);
+      vm.push(v);
       break;
 
     case "LIT":
       // create new value object and push to stack
       val = bytecode.arg1;
       obj = vm.objects.push(new ValueObject(val)) - 1;
-      v = new JSVar(JS_OBJ, obj);
+      v = new JSVar(VT_OBJ, obj);
       vm.push(v);
       break;
 
     case "MUL":
       // multiply stack top object and pop
-      val = vm.popVal() * vm.popVal();
-      vm.pushVal(val);
+      val = vm.pop();
+      val = vm.pop() * val;
+      obj = vm.objects.push(new ValueObject(val)) - 1;
+      v = new JSVar(VT_OBJ, obj);
+      vm.push(v);
       break;
 
     case "POP":
@@ -1051,12 +1141,21 @@ function run(code) {
 
     case "REF":
       if (bytecode.arg1 === "LOCAL") {
-        vm.stack.push();
+        v = new JSVar(VT_STK, vm.ref_local(bytecode.arg2));
+        vm.stack.push(v);
       }
       break;
 
     case "RET":
-      // vm.pop();
+      if (vm.fp_stack.length === 1 && vm.fp_stack[0] === 0) {
+        while (vm.stack.length) {
+          vm.pop();
+        }
+      }
+      break;
+
+    case '=':
+      vm.assign();
       break;
 
     default:
