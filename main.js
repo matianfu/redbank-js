@@ -4,7 +4,9 @@
 var JSInterpreter = require("./interpreter.js");
 var Esprima_Main = require("./esprima.js");
 var ESCodegen_Main = require("./escodegen.js");
-var Redbank = require("./redbank.js");
+var Compiler = require("./redbank_compiler.js");
+var VM = require("./redbank_vm.js");
+
 
 /**
  * options
@@ -49,7 +51,7 @@ var test_cases = [ {
   text : 'var a; a = function(){}; a();'
 } ]
 
-var source = test_cases[9].text;
+var source = test_cases[0].text;
 
 if (run_with_jsinterpreter) {
   var interpreter = JSInterpreter.BuildInterpreter(source);
@@ -68,4 +70,10 @@ if (generate_source_with_escodegen) {
   console.log(generated);
 }
 
-Redbank.compile_and_run(ast);
+var bytecodes = Compiler.compile(ast);
+
+VM.run(bytecodes);
+
+
+
+

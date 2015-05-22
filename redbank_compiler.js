@@ -690,7 +690,7 @@ function compileAST(fn, ast) {
   case "BlockStatement":
     compileBlockStatement(fn, ast);
     break;
-    
+
   case "CallExpression":
     compileCallExpression(fn, ast);
     break;
@@ -758,7 +758,7 @@ function compileBinaryExpression(fn, ast) {
 // body: [ Statement ];
 // }
 function compileBlockStatement(fn, ast) {
-  
+
   for (var i = 0; i < ast.body.length; i++) {
     compileAST(fn, ast.body[i]);
   }
@@ -770,7 +770,7 @@ function compileBlockStatement(fn, ast) {
 // arguments: [ Expression ];
 // }
 function compileCallExpression(fn, ast) {
-  
+
   compileAST(fn, ast.callee);
   fn.emit({
     op : "CALL"
@@ -805,7 +805,8 @@ function compileFunctionExpression(fn, ast) {
   // construct function object
   fn.emit({
     op : 'FUNC',
-    arg1 : ast.fnode  // replace with offset in backpatching
+    arg1 : ast.fnode
+  // replace with offset in backpatching
   });
 }
 
@@ -963,8 +964,8 @@ function compileFN(fn) {
   }
 }
 
-function compile_and_run(node) {
-  
+function compile(node) {
+
   var i;
 
   var fnroot = prepare(node);
@@ -984,18 +985,18 @@ function compile_and_run(node) {
       return a.uid - b.uid;
     });
   }
-  
+
   var offset = 0;
   for (i = 0; i < array.length; i++) {
     array[i].offset = offset;
     offset += array[i].code.length;
   }
-  
+
   var merge = [];
   for (i = 0; i < array.length; i++) {
     merge = merge.concat(array[i].code);
   }
-  
+
   // back patching func address
   for (i = 0; i < merge.length; i++) {
     if (merge[i].op === "FUNC") {
@@ -1003,12 +1004,10 @@ function compile_and_run(node) {
     }
   }
 
-  var code = fnroot.code;
-
-  run(code);
+  return merge;
 }
 
-exports.compile_and_run = compile_and_run;
+exports.compile = compile;
 
 /*******************************************************************************
  * 
@@ -1025,8 +1024,8 @@ function ValueObject(value) {
 
 function FuncObject(value) {
   this.type = "function";
-  this.value = value;     // value is the jump position
-  this.display = [];      // hold freevar
+  this.value = value; // value is the jump position
+  this.display = []; // hold freevar
   this.ref = 0;
 }
 
@@ -1044,6 +1043,7 @@ var VT_STK = "Stack";
 var VT_LIT = "Literal";
 var VT_NULL = "Null";
 
+
 function run(code) {
 
   console.log("-------------------- start running ---------------------");
@@ -1054,7 +1054,7 @@ function run(code) {
     fp : 0,
 
     pc_stack : [],
-    fp_stack : [],
+    fp_stack : [ 0 ],
 
     // stack store vars
     stack : [], // higher side is the top
@@ -1083,6 +1083,23 @@ function run(code) {
     ref_local : function(offset) {
       var fp = this.fp_stack[this.fp_stack.length - 1];
       return fp + offset;
+    },
+
+    load_local : function() {
+      var v = this.stack.pop();
+
+      if (v.type !== VT_STK)
+        throw "unmatched type!";
+      
+      v = new JSVar(this.stack[this.ref_local(v.index)].type,
+          this.stack[this.ref_local(v.index)].index);
+
+      this.stack.push(v);
+      if (v.type === VT_OBJ) {
+        this.objects[v.index].ref++;
+      }
+      
+      return v;
     },
 
     // display variable not supported yet
@@ -1198,7 +1215,7 @@ function run(code) {
         + bytecode.arg2 + ' ' + bytecode.arg3);
 
     var v, obj;
-    var id;
+    var id, index;
     var val;
     var opd1, opd2;
 
@@ -1211,15 +1228,21 @@ function run(code) {
       v = new JSVar(VT_OBJ, obj);
       vm.push(v);
       break;
-      
+
     case "CALL":
+
+      v = vm.stack[vm.stack.length - 1];
+      if (v.type === VT_STK) {
+        v = vm.load_local();
+      }
       
       vm.pc_stack.push(vm.pc);
-      // vm.pc = 
+      vm.pc = vm.objects[v.index].value;
       vm.fp_stack.push(vm.fp);
       vm.fp = vm.stack.length;
+
       break;
-      
+
     case "FUNC":
       val = bytecode.arg1;
       obj = vm.objects.push(new FuncObject(val)) - 1;
@@ -1295,13 +1318,13 @@ function run(code) {
     }
   }
 
-//  while (code.length > 0)
-//    step(vm, code.shift());
+  //  while (code.length > 0)
+  //    step(vm, code.shift());
 
   while (vm.pc < code.length) {
     step(vm, code[vm.pc++]);
   }
-  
+
   vm.printstack();
   vm.assert_no_leak();
 }
