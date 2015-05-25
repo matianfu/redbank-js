@@ -19,7 +19,7 @@ var generate_source_with_escodegen = false;
 /**
  * test cases
  */
-var test_cases = [ {
+var test_group_001 = [ {
   name : "one_line_literal", // 0
   text : '1000;',
 }, {
@@ -42,16 +42,42 @@ var test_cases = [ {
   text : 'var a; var b; a = 10; b = a;' // 6
 }, {
   name : "var_add_literal",
-  text : 'var a; a = 10; var b; b = a + 5;' // 7 fail
+  text : 'var a; a = 10; var b; b = a + 5;' // 7
 }, {
-  name : "var_declare_and_init_literal", // 8 unknown
+  name : "var_add_self",
+  text : 'var a; a = 1; a = a + 10;' // 8
+}, {
+  name : "var_declare_and_init_literal", // 9 
   text : 'var a = 10;'
 }, {
-  name : "empty_func_declaration", // 9
+  name : "var_declare_and_init_by_var", // 10
+  text : "var a = 15; var b = a;"
+}, {
+  name : "var_declare_and_init_by_expr", // 11
+  text : "var a = 15; var b = a * 10;"
+}, {
+  name : "empty_func_declaration", // 12
   text : 'var a; a = function(){}; a();'
+}, {
+  name : "empty_func_declaration", // 13
+  text : 'var a; a = function(x){ var b = x;}; a(10);'
+}, {
+  name : "empty_func_declaration_ret_value", // 14
+  text : 'var a; a = function(x){ var b = x; return b; }; a(10);'
+}, {
+  name : "empty_func_declaration_ret_value", // 15
+  text : 'var a; a = function(x){ var b = x; return b; }; a = a(10);'
+}, {
+  name : "simple_closure",  // 16
+  text : 'var a = function() { var b = 0; ' +
+         'return function() { b = b + 987; return b; }};' +
+         'var c = a(); c();'
+}, {
+  name : "test", // 
+  text : 'var a = { x : 10, y : function() { this.x++ } }; a.y();'
 } ]
 
-var source = test_cases[0].text;
+var source = test_group_001[16].text;
 
 if (run_with_jsinterpreter) {
   var interpreter = JSInterpreter.BuildInterpreter(source);
@@ -71,6 +97,8 @@ if (generate_source_with_escodegen) {
 }
 
 var bytecodes = Compiler.compile(ast);
+
+console.log(source);
 
 VM.run(bytecodes);
 

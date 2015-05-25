@@ -1,39 +1,11 @@
 'use strict';
 
-var Syntax;
-var Precedence;
-var BinaryPrecedence;
-var SourceNode;
-var estraverse;
-var esutils;
-var isArray;
-var base;
-var indent;
-var json;
-var renumber;
-var hexadecimal;
-var quotes;
-var escapeless;
-var newline;
-var space;
-var parentheses;
-var semicolons;
-var safeConcatenation;
-var directive;
-var extra;
-var parse;
-var sourceMap;
-var sourceCode;
-var preserveBlankLines;
-var FORMAT_MINIFY;
-var FORMAT_DEFAULTS;
+var estraverse = require('estraverse');
+var esutils = require('esutils');
 
-estraverse = require('estraverse');
-esutils = require('esutils');
+var Syntax = estraverse.Syntax;
 
-Syntax = estraverse.Syntax;
-
-Precedence = {
+var Precedence = {
   Sequence : 0,
   Yield : 1,
   Await : 1,
@@ -59,7 +31,7 @@ Precedence = {
   Primary : 19
 };
 
-BinaryPrecedence = {
+var BinaryPrecedence = {
   '||' : Precedence.LogicalOR,
   '&&' : Precedence.LogicalAND,
   '|' : Precedence.BitwiseOR,
@@ -87,38 +59,6 @@ BinaryPrecedence = {
   '/' : Precedence.Multiplicative
 };
 
-// Flags
-var F_ALLOW_IN = 1;
-var F_ALLOW_CALL = 1 << 1;
-var F_ALLOW_UNPARATH_NEW = 1 << 2;
-var F_FUNC_BODY = 1 << 3;
-var F_DIRECTIVE_CTX = 1 << 4;
-var F_SEMICOLON_OPT = 1 << 5;
-
-// Expression flag sets
-// NOTE: Flag order:
-// F_ALLOW_IN
-// F_ALLOW_CALL
-// F_ALLOW_UNPARATH_NEW
-var E_FTT = F_ALLOW_CALL | F_ALLOW_UNPARATH_NEW;
-var E_TTF = F_ALLOW_IN | F_ALLOW_CALL;
-var E_TTT = F_ALLOW_IN | F_ALLOW_CALL | F_ALLOW_UNPARATH_NEW;
-var E_TFF = F_ALLOW_IN;
-var E_FFT = F_ALLOW_UNPARATH_NEW;
-var E_TFT = F_ALLOW_IN | F_ALLOW_UNPARATH_NEW;
-
-// Statement flag sets
-// NOTE: Flag order:
-// F_ALLOW_IN
-// F_FUNC_BODY
-// F_DIRECTIVE_CTX
-// F_SEMICOLON_OPT
-var S_TFFF = F_ALLOW_IN;
-var S_TFFT = F_ALLOW_IN | F_SEMICOLON_OPT;
-var S_FFFF = 0x00;
-var S_TFTF = F_ALLOW_IN | F_DIRECTIVE_CTX
-var S_TTFF = F_ALLOW_IN | F_FUNC_BODY;
-
 function merge(target, override) {
   var key;
   for (key in override) {
@@ -132,10 +72,6 @@ function merge(target, override) {
 function emit(x) {
   console.log(line_number++ + ' : ' + x);
 }
-
-// /////////////////////////////////////////////////////////////////////////////
-
-// /////////////////////////////////////////////////////////////////////////////
 
 var line_number = 0;
 
@@ -261,8 +197,105 @@ function fnode_visit(fnode, pre, post) {
     post(fnode);
 }
 
+var indent = "";
+var indent_size = 0;
+
+function indent_incr() {
+  indent = "";
+  indent_size += 2;
+
+  for (var i = 0; i < indent_size; i++) {
+    indent += ' ';
+  }
+}
+
+function indent_decr() {
+  indent = "";
+  indent_size -= 2;
+
+  for (var i = 0; i < indent_size; i++) {
+    indent += ' ';
+  }
+}
+
 function astlog(x) {
-  console.log(x);
+  console.log(indent + x);
+}
+
+var lr_stack = [];
+
+function expect_l(ast) {
+  lr_stack.unshift({
+    val : "left",
+    node : ast
+  });
+}
+
+function unexpect_l(ast) {
+
+  var lr = lr_stack.shift();
+
+  if (lr.val !== "left" || lr.node !== ast)
+    throw "unexpect left not match";
+}
+
+function expect_r(ast) {
+  lr_stack.unshift({
+    val : "right",
+    node : ast
+  })
+}
+
+function unexpect_r(ast) {
+
+  var lr = lr_stack.shift();
+  if (lr.val !== "right" || lr.node !== ast)
+    throw "unexpect right not match";
+}
+
+function expecting_l() {
+  if (lr_stack.length === 0)
+    return false;
+
+  if (lr_stack[0].val === "left")
+    return true;
+  return false;
+}
+
+function expecting_r() {
+  if (lr_stack.length === 0)
+    return false;
+
+  if (lr_stack[0].val === "right")
+    return true;
+  return false;
+}
+
+function assert_expecting_l() {
+  if (lr_stack.length === 0 || lr_stack[0].val !== "left")
+    throw "assert expecting left fail";
+}
+
+function assert_expecting_r() {
+  if (lr_stack.length === 0 || lr_stack[0].val !== "right")
+    throw "assert expecting right fail";
+
+}
+
+/**
+ * expecting either l or r but not none.
+ */
+function assert_expecting_anything() {
+  if (lr_stack.length === 0)
+    throw "assert expecting anything fail";
+}
+
+/**
+ * expecting nothing, aka, statement
+ */
+function assert_expecting_nothing() {
+  if (lr_stack.length !== 0)
+    throw "assert expect nothing fail";
 }
 
 /**
@@ -287,15 +320,15 @@ function build_function_tree(node) {
       return;
     }
 
-    console.log('visit: ' + astnode.type);
+    // console.log('visit: ' + astnode.type);
 
     function emitcode(instruction) {
       this.code.push(instruction);
 
-      console.log('EMIT : ' + instruction.op + ' '
-          + ((instruction.arg1 === undefined) ? '' : instruction.arg1) + ' '
-          + ((instruction.arg2 === undefined) ? '' : instruction.arg2) + ' '
-          + ((instruction.arg3 === undefined) ? '' : instruction.arg3));
+      console.log('                                ..........' + instruction.op
+          + ' ' + ((instruction.arg1 === undefined) ? '' : instruction.arg1)
+          + ' ' + ((instruction.arg2 === undefined) ? '' : instruction.arg2)
+          + ' ' + ((instruction.arg3 === undefined) ? '' : instruction.arg3));
     }
 
     if (astnode.type == "Program") {
@@ -664,10 +697,15 @@ function prepare(astroot) {
 // }
 function compileAssignmentExpression(fn, ast) {
 
-  astlog("compileAssignmentExpression");
+  assert_expecting_r();
 
+  expect_l(ast);
   compileAST(fn, ast.left);
+  unexpect_l(ast);
+
+  expect_r(ast);
   compileAST(fn, ast.right);
+  unexpect_r(ast);
 
   fn.emit({
     op : '=',
@@ -677,7 +715,17 @@ function compileAssignmentExpression(fn, ast) {
 // dispatcher
 function compileAST(fn, ast) {
 
-  // console.log("Compile : " + ast.type);
+  var expect;
+
+  indent_incr();
+
+  if (lr_stack.length === 0)
+    expect = " expecting none";
+  else
+    expect = " expecting " + lr_stack[0].val;
+
+  astlog(ast.type + " { //" + expect);
+
   switch (ast.type) {
   case "AssignmentExpression":
     compileAssignmentExpression(fn, ast);
@@ -695,12 +743,12 @@ function compileAST(fn, ast) {
     compileCallExpression(fn, ast);
     break;
 
-  case "FunctionExpression":
-    compileFunctionExpression(fn, ast);
+  case "ExpressionStatement":
+    compileExpressionStatement(fn, ast);
     break;
 
-  case "Program":
-    compileProgram(fn, ast);
+  case "FunctionExpression":
+    compileFunctionExpression(fn, ast);
     break;
 
   case "Identifier":
@@ -711,8 +759,12 @@ function compileAST(fn, ast) {
     compileLiteral(fn, ast);
     break;
 
-  case "ExpressionStatement":
-    compileExpressionStatement(fn, ast);
+  case "Program":
+    compileProgram(fn, ast);
+    break;
+
+  case "ReturnStatement":
+    compileReturnStatement(fn, ast);
     break;
 
   case "VariableDeclaration":
@@ -726,6 +778,9 @@ function compileAST(fn, ast) {
   default:
     console.log("Compile : " + ast.type + " not dispatched.");
   }
+
+  astlog("}");
+  indent_decr();
 }
 
 // interface BinaryExpression <: Expression {
@@ -736,8 +791,15 @@ function compileAST(fn, ast) {
 // }
 function compileBinaryExpression(fn, ast) {
 
+  // this function returns r only
+  assert_expecting_r();
+
+  // this expression expect r operand
+  expect_r();
+
   compileAST(fn, ast.left);
   compileAST(fn, ast.right);
+
   switch (ast.operator) {
   case '+':
     fn.emit({
@@ -751,6 +813,8 @@ function compileBinaryExpression(fn, ast) {
     });
     break;
   }
+
+  unexpect_r();
 }
 
 // interface BlockStatement <: Statement {
@@ -762,6 +826,7 @@ function compileBlockStatement(fn, ast) {
   for (var i = 0; i < ast.body.length; i++) {
     compileAST(fn, ast.body[i]);
   }
+
 }
 
 // interface CallExpression <: Expression {
@@ -771,7 +836,32 @@ function compileBlockStatement(fn, ast) {
 // }
 function compileCallExpression(fn, ast) {
 
+  assert_expecting_r();
+
+  for (var i = 0; i < ast.arguments.length; i++) {
+    compileAST(fn, ast.arguments[i]);
+  }
+
+  // put argc
+  // TODO pretend no args now
+  fn.emit({
+    op : "VAL",
+    arg1 : ast.arguments.length
+  });
+
+  // put this
+  // TODO pretend null now
+  fn.emit({
+    op : "VAL",
+    arg1 : 0
+  });
+
+  // put callee, may evaluate to lvalue
+  expect_r(ast);
   compileAST(fn, ast.callee);
+  unexpect_r(ast);
+
+  // do call
   fn.emit({
     op : "CALL"
   });
@@ -802,12 +892,23 @@ function compileFunctionDeclaration(fn, ast) {
 // expression: boolean;
 // }
 function compileFunctionExpression(fn, ast) {
+
+  var sub_fn = ast.fnode;
+  var l = sub_fn.freevars.length;
   // construct function object
   fn.emit({
     op : 'FUNC',
-    arg1 : ast.fnode
-  // replace with offset in backpatching
+    arg1 : sub_fn,  // replace with offset in backpatching
+    arg2 : l
   });
+
+  for (var i = 0; i < l; i++) {
+    fn.emit({
+      op : "CAPTURE",
+      arg1 : sub_fn.freevars[i].from,
+      arg2 : sub_fn.freevars[i].slot
+    })
+  }
 }
 
 // interface Identifier <: Node, Expression, Pattern {
@@ -816,6 +917,8 @@ function compileFunctionExpression(fn, ast) {
 // }
 function compileIdentifier(fn, ast) {
 
+  assert_expecting_anything();
+
   var i;
   var found = false;
 
@@ -823,11 +926,18 @@ function compileIdentifier(fn, ast) {
     for (i = 0; i < fn.parameters.length; i++) {
       if (fn.parameters[i].name === ast.name) {
         fn.emit({
-          op : 'REF',
+          op : 'LITA',
           arg1 : 'PARAM',
           arg2 : i
         });
-        return;
+
+        if (expecting_r()) {
+          fn.emit({
+            op : 'FETCH'
+          })
+        }
+        found = true;
+        break;
       }
     }
   }
@@ -836,11 +946,18 @@ function compileIdentifier(fn, ast) {
     for (i = 0; i < fn.locals.length; i++) {
       if (fn.locals[i].name === ast.name) {
         fn.emit({
-          op : 'REF',
+          op : 'LITA',
           arg1 : 'LOCAL',
           arg2 : i
         });
-        return;
+
+        if (expecting_r()) {
+          fn.emit({
+            op : 'FETCH'
+          });
+        }
+        found = true;
+        break;
       }
     }
   }
@@ -849,16 +966,26 @@ function compileIdentifier(fn, ast) {
     for (i = 0; i < fn.freevars.length; i++) {
       if (fn.freevars[i].name === ast.name) {
         fn.emit({
-          op : 'REF',
+          op : 'LITA',
           arg1 : 'FRVAR',
           arg2 : i
         });
-        return;
+        
+        if (expecting_r()) {
+          fn.emit({
+            op : 'FETCH'
+          });
+        }
+        found = true;
+        break;
       }
     }
   }
 
-  throw "Identifier: " + ast.name + " not found";
+  if (!found) {
+    throw "Identifier: " + ast.name + " not found";
+  }
+
 }
 
 // interface Literal <: Node, Expression {
@@ -867,8 +994,10 @@ function compileIdentifier(fn, ast) {
 // }
 function compileLiteral(fn, ast) {
 
+  assert_expecting_r();
+
   fn.emit({
-    op : "LIT",
+    op : "LITC",
     arg1 : ast.value
   });
 }
@@ -879,10 +1008,14 @@ function compileLiteral(fn, ast) {
 // }
 function compileExpressionStatement(fn, ast) {
 
+  expect_r(ast);
+
   compileAST(fn, ast.expression);
   fn.emit({
-    op : "POP",
-  })
+    op : "DROP",
+  });
+
+  unexpect_r(ast);
 }
 
 // interface Program <: Node {
@@ -891,8 +1024,35 @@ function compileExpressionStatement(fn, ast) {
 // }
 function compileProgram(fn, ast) {
 
+  assert_expecting_nothing();
+
   for (var i = 0; i < ast.body.length; i++) {
     compileAST(fn, ast.body[i]);
+  }
+
+}
+
+// interface ReturnStatement <: Statement {
+// type: "ReturnStatement";
+// argument: Expression | null;
+// }
+function compileReturnStatement(fn, ast) {
+
+  assert_expecting_nothing();
+
+  if (ast.argument == null) {
+    fn.emit({
+      op : "RET",
+    });
+  } else {
+    expect_r(ast);
+    compileAST(fn, ast.argument);
+    unexpect_r(ast);
+
+    fn.emit({
+      op : "RET",
+      arg1 : "RESULT"
+    })
   }
 }
 
@@ -906,6 +1066,7 @@ function compileVariableDeclaration(fn, ast) {
   for (var i = 0; i < ast.declarations.length; i++) {
     compileAST(fn, ast.declarations[i]);
   }
+
 }
 
 // interface VariableDeclarator <: Node {
@@ -914,6 +1075,8 @@ function compileVariableDeclaration(fn, ast) {
 // init: Expression | null;
 // }
 function compileVariableDeclarator(fn, ast) {
+
+  assert_expecting_nothing(); // supposed to be
 
   if (ast.init !== null) {
     var i;
@@ -929,22 +1092,33 @@ function compileVariableDeclarator(fn, ast) {
     if (found === false)
       throw "var name " + ast.id.name + " not found!";
 
+    fn.emit({
+      op : 'LITA',
+      arg1 : 'LOCAL',
+      arg2 : i
+    });
+
+    expect_r(ast);
     compileAST(fn, ast.init);
+    unexpect_r(ast);
 
     fn.emit({
-      op : "POP",
-      arg1 : "LOC",
-      arg2 : i,
+      op : "STORE",
     })
   }
+
 }
 
+/**
+ * compile a function node
+ * @param fn
+ */
 function compileFN(fn) {
 
   console.log("compileFN : " + fn.uid);
 
   fn.emit({
-    op : "SPAN",
+    op : "LITN",
     arg1 : fn.locals.length
   });
 
@@ -954,14 +1128,16 @@ function compileFN(fn) {
       || fn.astnode.type === "FunctionExpression") {
     compileAST(fn, fn.astnode.body);
   } else {
-    throw "Unexpected fnode ast type!";
+    throw "Unexpected fnode ast type";
   }
 
-  if (fn.code.length > 0 && fn.code[fn.code.length - 1].op !== "RET") {
-    fn.emit({
-      op : "RET",
-    })
-  }
+  if (fn.code.length > 0
+      && fn.code[fn.code.length - 1].op === "RET")
+    return;
+
+  fn.emit({
+    op : "RET"
+  });
 }
 
 function compile(node) {
@@ -1008,323 +1184,3 @@ function compile(node) {
 }
 
 exports.compile = compile;
-
-/*******************************************************************************
- * 
- * Virtual Machine
- * 
- ******************************************************************************/
-
-// or may be we should call this primitive object?
-function ValueObject(value) {
-  this.type = typeof value;
-  this.value = value;
-  this.ref = 0;
-}
-
-function FuncObject(value) {
-  this.type = "function";
-  this.value = value; // value is the jump position
-  this.display = []; // hold freevar
-  this.ref = 0;
-}
-
-function JSVar(type, index) {
-  this.type = type;
-  this.index = index;
-}
-
-/**
- * var type constant
- */
-var VT_OBJ = "Object";
-var VT_FRV = "FreeVar";
-var VT_STK = "Stack";
-var VT_LIT = "Literal";
-var VT_NULL = "Null";
-
-
-function run(code) {
-
-  console.log("-------------------- start running ---------------------");
-
-  var vm = {
-
-    pc : 0,
-    fp : 0,
-
-    pc_stack : [],
-    fp_stack : [ 0 ],
-
-    // stack store vars
-    stack : [], // higher side is the top
-
-    // display store free vars
-    display : [ 0 ],
-    // objects
-    objects : [ 0 ],
-    // constants
-    literals : [ 0 ],
-
-    assert_no_leak : function() {
-      // check objects
-      for (var i = 1; i < this.objects.length; i++) {
-        if (this.objects[i] !== undefined) {
-          console.log("mem leak @ object id: " + i);
-        }
-      }
-      // check display
-      // check stack
-      if (this.stack.length > 0) {
-        console.log("mem leak @ stack.")
-      }
-    },
-
-    ref_local : function(offset) {
-      var fp = this.fp_stack[this.fp_stack.length - 1];
-      return fp + offset;
-    },
-
-    load_local : function() {
-      var v = this.stack.pop();
-
-      if (v.type !== VT_STK)
-        throw "unmatched type!";
-      
-      v = new JSVar(this.stack[this.ref_local(v.index)].type,
-          this.stack[this.ref_local(v.index)].index);
-
-      this.stack.push(v);
-      if (v.type === VT_OBJ) {
-        this.objects[v.index].ref++;
-      }
-      
-      return v;
-    },
-
-    // display variable not supported yet
-    push : function(v) {
-      this.stack.push(v);
-
-      if (v.type === VT_OBJ) {
-        this.objects[v.index].ref++;
-      }
-    },
-
-    // pop any thing, return value
-    pop : function() {
-      var val, v = this.stack.pop();
-
-      if (v.type === VT_OBJ) {
-        val = this.objects[v.index].value;
-        this.objects[v.index].ref--;
-        if (this.objects[v.index].ref === 0) {
-          this.objects[v.index] = undefined;
-        }
-        return val;
-      } else if (v.type === VT_NULL) {
-        // do nothing
-      }
-    },
-
-    // 
-    assign : function() {
-
-      var rv, lv, v;
-      rv = this.stack.pop();
-      lv = this.stack.pop();
-
-      if (lv.type === VT_STK) { // assign to locals
-
-        // free old lv
-        v = this.stack[lv.index];
-        switch (v.type) {
-        case VT_OBJ:
-          this.objects[v.index].ref--;
-          if (this.objects[v.index].ref === 0) {
-            this.objects[v.index] = undefined;
-          }
-          break;
-        }
-
-        if (rv.type === VT_OBJ) { // rvalue
-          this.stack[lv.index] = rv;
-          switch (rv.type) {
-          case VT_OBJ:
-            this.objects[rv.index].ref++;
-            break;
-          }
-
-          // push back, no need to increment ref count
-          this.stack.push(rv);
-        } else if (rv.type === VT_STK) {
-          rv = this.stack[rv.index];
-          this.stack[lv.index] = rv;
-          switch (rv.type) {
-          case VT_OBJ:
-            this.objects[rv.index].ref++;
-            break;
-          }
-
-          // push new, increment ref count
-          this.stack.push(rv);
-          this.objects[rv.index].ref++;
-        }
-
-      } else {
-        throw "not supported yet.";
-      }
-    },
-
-    span : function(x) {
-      for (var i = 0; i < x; i++) {
-        this.stack.push(new JSVar(VT_NULL, 0));
-      }
-    },
-
-    printstack : function() {
-      if (this.stack.length === 0) {
-        console.log("STACK Empty");
-      } else {
-        console.log("STACK size: " + this.stack.length);
-        for (var i = this.stack.length - 1; i >= 0; i--) {
-          var v = this.stack[i];
-          if (v.type == VT_OBJ) {
-            var index = v.index;
-
-            console.log(i + " : " + VT_OBJ + " " + index + ", val: "
-                + this.objects[index].value + ", ref: "
-                + this.objects[index].ref);
-          } else if (v.type === VT_STK) {
-
-            console.log(i + " : " + VT_STK + " " + v.index);
-          } else {
-            console.log(i + " : " + v.type);
-          }
-        }
-      }
-
-      console.log("----------------------------------");
-    }
-  }
-
-  function step(vm, bytecode) {
-
-    vm.printstack();
-    console.log("OPCODE: " + bytecode.op + ' ' + bytecode.arg1 + ' '
-        + bytecode.arg2 + ' ' + bytecode.arg3);
-
-    var v, obj;
-    var id, index;
-    var val;
-    var opd1, opd2;
-
-    switch (bytecode.op) {
-    case "ADD":
-      // add stack top object and pop
-      val = vm.pop();
-      val = vm.pop() + val;
-      obj = vm.objects.push(new ValueObject(val)) - 1;
-      v = new JSVar(VT_OBJ, obj);
-      vm.push(v);
-      break;
-
-    case "CALL":
-
-      v = vm.stack[vm.stack.length - 1];
-      if (v.type === VT_STK) {
-        v = vm.load_local();
-      }
-      
-      vm.pc_stack.push(vm.pc);
-      vm.pc = vm.objects[v.index].value;
-      vm.fp_stack.push(vm.fp);
-      vm.fp = vm.stack.length;
-
-      break;
-
-    case "FUNC":
-      val = bytecode.arg1;
-      obj = vm.objects.push(new FuncObject(val)) - 1;
-      v = new JSVar(VT_OBJ, obj);
-      vm.push(v);
-      break;
-
-    case "LIT":
-      // create new value object and push to stack
-      val = bytecode.arg1;
-      obj = vm.objects.push(new ValueObject(val)) - 1;
-      v = new JSVar(VT_OBJ, obj);
-      vm.push(v);
-      break;
-
-    case "MUL":
-      // multiply stack top object and pop
-      val = vm.pop();
-      val = vm.pop() * val;
-      obj = vm.objects.push(new ValueObject(val)) - 1;
-      v = new JSVar(VT_OBJ, obj);
-      vm.push(v);
-      break;
-
-    case "POP":
-      // just pop
-      if (bytecode.arg1 === undefined) {
-        val = vm.pop();
-        if (vm.stack.length == 0) { // debug info only
-          console.log("The last value in stack is " + val);
-        }
-      } else if (bytecode.arg1 === "LOC") { // pop to local
-
-        var idx = vm.fp[vm.fp.length - 1];
-        idx += bytecode.arg2;
-
-        id = vm.stack[idx];
-
-        if (id !== 0) {
-          vm.objects[id].ref--;
-        }
-
-        vm.stack[idx] = vm.stack[vm.stack.length - 1];
-        vm.stack.pop();
-      }
-      break;
-
-    case "SPAN":
-      vm.span(bytecode.arg1);
-      break;
-
-    case "REF":
-      if (bytecode.arg1 === "LOCAL") {
-        v = new JSVar(VT_STK, vm.ref_local(bytecode.arg2));
-        vm.stack.push(v);
-      }
-      break;
-
-    case "RET":
-      if (vm.fp_stack.length === 1 && vm.fp_stack[0] === 0) {
-        while (vm.stack.length) {
-          vm.pop();
-        }
-      }
-      break;
-
-    case '=':
-      vm.assign();
-      break;
-
-    default:
-      console.log("!!! unknown instruction : " + bytecode.op);
-    }
-  }
-
-  //  while (code.length > 0)
-  //    step(vm, code.shift());
-
-  while (vm.pc < code.length) {
-    step(vm, code[vm.pc++]);
-  }
-
-  vm.printstack();
-  vm.assert_no_leak();
-}
