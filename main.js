@@ -97,14 +97,25 @@ var test_group_001 = [
     } ]
 
 test_group_002 = [ {
-  name : "simple boolean",  // 0
-  text : "1 === 1"
+  name : "simple boolean", // 0
+  text : '1 === 1'
 }, {
-  name : "simple boolean 2", // 1
-  text : "2 > 1"
+  name : "simple if", // 1
+  text : 'var a = 0; var b; if (a === 0) b = 1;'
 } ]
 
-var source = test_group_002[0].text;
+test_group_003 = [ {
+  name : "empty object assignment", // 0
+  text : 'var a; a = {}'
+}, {
+  name : "object property assignment", // 1
+  text : 'var a; a = {}; a.x = 1;'
+}, {
+  name : "",
+  text : 'var a; a = { x: 1 };' // 2
+} ]
+
+var source = test_group_003[1].text;
 
 if (run_with_jsinterpreter) {
   var interpreter = JSInterpreter.BuildInterpreter(source);

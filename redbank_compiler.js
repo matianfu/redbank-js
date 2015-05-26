@@ -523,7 +523,7 @@ function annotate(fnode) {
       }
     }
   }
-  
+
   /**
    * this stack is used to check parent node type
    */
@@ -537,10 +537,10 @@ function annotate(fnode) {
     var name = undefined;
 
     if (astnode.type === "Identifier") {
-      if (ast_stack.length > 0 && ast_stack[0].type === "MemberExpression" && astnode === ast_stack[0].property) {
+      if (ast_stack.length > 0 && ast_stack[0].type === "MemberExpression"
+          && astnode === ast_stack[0].property) {
         // bypass property identifier but not object 
-      }
-      else {
+      } else {
         name = astnode.name;
       }
     } else if (astnode.type == 'FunctionDeclaration') {
@@ -690,6 +690,36 @@ function prepare(astroot) {
 
 // /////////////////////////////////////////////////////////////////////////////
 
+var _code_label = 1;
+
+function newLabel() {
+  return _code_label++;
+}
+
+function emitLabel(fn, label) {
+
+  fn.emit({
+    op : "LABEL",
+    arg1 : label
+  });
+}
+
+function emitJUMP(fn, to) {
+  
+  fn.emit({
+    op : "JUMP",
+    arg1 : to
+  })
+}
+
+function emitJUMPC(fn, t, f) {
+  fn.emit({
+    op : "JUMPC",
+    arg1 : t,
+    arg2 : f
+  });
+}
+
 // interface AssignmentExpression <: Expression {
 // type: "AssignmentExpression";
 // operator: AssignmentOperator;
@@ -755,6 +785,10 @@ function compileAST(fn, ast) {
   case "Identifier":
     compileIdentifier(fn, ast);
     break;
+    
+  case "IfStatement":
+    compileIfStatement(fn, ast);
+    break;
 
   case "Literal":
     compileLiteral(fn, ast);
@@ -813,13 +847,13 @@ function compileBinaryExpression(fn, ast) {
       op : 'MUL'
     });
     break;
-    
+
   case "===":
     fn.emit({
       op : '==='
     });
     break;
-    
+
   default:
     throw "unsupported binary operator";
   }
@@ -886,9 +920,8 @@ function compileCallExpression(fn, ast) {
 // consequent: Expression;
 // }
 function compileConditionalExpression(fn, ast) {
-  
-}
 
+}
 
 // interface FunctionDeclaration <: Function, Declaration {
 // type: "FunctionDeclaration";
@@ -1011,6 +1044,42 @@ function compileIdentifier(fn, ast) {
 
 }
 
+// interface IfStatement <: Statement {
+// type: "IfStatement";
+// test: Expression;
+// consequent: Statement;
+// alternate: Statement | null;
+// }
+function compileIfStatement(fn, ast) {
+
+  assert_expecting_nothing();
+
+  var begin = newLabel();
+  var after = newLabel();
+  var t = newLabel();
+  var f = newLabel();
+
+  emitLabel(fn, begin);
+
+  expect_r(ast);
+  compileAST(fn, ast.test);
+  unexpect_r(ast);
+
+  emitJUMPC(fn, t, f);
+
+  emitLabel(fn, t);
+  compileAST(fn, ast.consequent);
+  emitJUMP(fn, after);
+
+  emitLabel(fn, f);
+  if (ast.alternate !== null) {
+    compileAST(fn, ast.alternate);
+  }
+  emitJUMP(fn, after);
+
+  emitLabel(fn, after);
+}
+
 // interface Literal <: Node, Expression {
 // type: "Literal";
 // value: string | boolean | null | number | RegExp;
@@ -1039,6 +1108,14 @@ function compileExpressionStatement(fn, ast) {
   });
 
   unexpect_r(ast);
+}
+
+// interface ObjectExpression <: Expression {
+// type: "ObjectExpression";
+// properties: [ Property ];
+// }
+function compileObjectExpression(fn, ast) {
+  
 }
 
 // interface Program <: Node {

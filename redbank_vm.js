@@ -136,6 +136,21 @@ function assert_var_object_number(v) {
     throw "var -> object is not an number, assert fail";
 }
 
+function assert_var_object_boolean(v) {
+  if (v.type !== VT_OBJ)
+    throw "var is not an object, assert fail";
+
+  if (Objects[v.index].type !== "boolean")
+    throw "var -> object is not a boolean, assert fail";
+}
+
+function getval_var_object_boolean(v) {
+
+  assert_var_object_boolean(v);
+
+  return Objects[v.index].value;
+}
+
 function assert_var_addr(v) {
   if (v.type === VT_LOC || v.type === VT_ARG || v.type === VT_FRV)
     return;
@@ -546,7 +561,18 @@ function printfreevar() {
   }
 }
 
-function step(bytecode) {
+function findLabel(code, label) {
+
+  for (var i = 0; i < code.length; i++) {
+    var bytecode = code[i];
+    if (bytecode.op === "LABEL" && bytecode.arg1 === label)
+      return i;
+  }
+
+  throw "Label not found";
+}
+
+function step(code, bytecode) {
   var v, obj;
   var id, index;
   var val;
@@ -615,11 +641,62 @@ function step(bytecode) {
     }
     break;
 
-  case "FUNC":
+  case "DROP": // n1 --
+    pop();
+    break;
+
+  case "FETCH": // addr -- n1
+    var addr = stack.pop();
+    if (addr.type === VT_LOC) {
+      v = stack[lid2sid(addr.index)];
+      if (v.type === VT_OBJ) {
+      } else if (v.type === VT_LNK) {
+        v = new JSVar(VT_OBJ, Links[v.index].object);
+      } else
+        throw "Unsupported var type in local slot";
+    } else if (addr.type === VT_ARG) {
+      v = stack[pid2sid(addr.index)];
+      if (v.type === VT_OBJ) {
+      } else if (v.type === VT_LNK) {
+        v = new JSVar(VT_OBJ, Links[v.index].object);
+      } else
+        throw "Unsupported var type in param slot";
+    } else if (addr.type === VT_FRV) {
+      v = freevars()[addr.index] // freevar
+      if (v.type === VT_LNK) {
+        v = new JSVar(VT_OBJ, Links[v.index].object);
+      } else
+        throw "Unsupported var type in frvar slot";
+    } else
+      throw "not supported yet.";
+    push(v);
+    break;
+
+  case "FUNC": // -- f1
     val = bytecode.arg1;
     obj = Objects.push(new FuncObject(val)) - 1;
     v = new JSVar(VT_OBJ, obj);
     push(v);
+    break;
+
+  case "JUMP":
+    v = bytecode.arg1;
+    v = findLabel(code, v);
+    PC = v;
+    break;
+
+  case "JUMPC":
+    v = getval_var_object_boolean(TOS());
+    pop();
+    if (v) {
+      PC = findLabel(code, bytecode.arg1);
+    } else {
+      PC = findLabel(code, bytecode.arg2);
+    }
+    break;
+
+  case "LABEL":
+    // do nothing
     break;
 
   case "LITA":
@@ -680,41 +757,6 @@ function step(bytecode) {
     // push(v);
     break;
 
-  case "DROP": // n1 --
-    pop();
-    // if (stack.length == 0) { // debug info only
-    // console.log("The last value in stack is " + val);
-    // }
-    break;
-
-  case "FETCH": // addr -- n1
-    var addr = stack.pop();
-    if (addr.type === VT_LOC) {
-      v = stack[lid2sid(addr.index)];
-      if (v.type === VT_OBJ) {
-      } else if (v.type === VT_LNK) {
-        v = new JSVar(VT_OBJ, Links[v.index].object);
-      } else
-        throw "Unsupported var type in local slot";
-    } else if (addr.type === VT_ARG) {
-      v = stack[pid2sid(addr.index)];
-      if (v.type === VT_OBJ) {
-      } else if (v.type === VT_LNK) {
-        v = new JSVar(VT_OBJ, Links[v.index].object);
-      } else
-        throw "Unsupported var type in param slot";
-    } else if (addr.type === VT_FRV) {
-      v = freevars()[addr.index] // freevar
-      if (v.type === VT_LNK) {
-        v = new JSVar(VT_OBJ, Links[v.index].object);
-      } else
-        throw "Unsupported var type in frvar slot";
-    } else
-      throw "not supported yet.";
-    push(v);
-
-    break;
-
   case "RET":
     if (FP === 0) { // main()
       while (stack.length) {
@@ -767,28 +809,27 @@ function step(bytecode) {
   case '=':
     assign();
     break;
-    
+
   case '===':
-    
+
     assert_var_object(TOS());
     assert_var_object(NOS());
-    
-    if (TOS().type === NOS().type && 
-        Objects[TOS().index].type === Objects[NOS().index].type &&
-        Objects[TOS().index].value === Objects[NOS().index].value) {
+
+    if (TOS().type === NOS().type
+        && Objects[TOS().index].type === Objects[NOS().index].type
+        && Objects[TOS().index].value === Objects[NOS().index].value) {
       v = new ValueObject(true);
-    }
-    else {
+    } else {
       v = new ValueObject(false);
     }
-    
+
     index = Objects.push(v) - 1;
     v = new JSVar(VT_OBJ, index);
-    
+
     pop();
     pop();
     push(v);
-    
+
     break;
 
   default:
@@ -820,7 +861,7 @@ function run(input) {
     // like the real
     PC++;
 
-    step(bytecode);
+    step(code, bytecode);
   }
 
   printstack();
