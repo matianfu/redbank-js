@@ -5,6 +5,61 @@ var esutils = require('esutils');
 
 var Syntax = estraverse.Syntax;
 
+AstCompiler.Expression = {
+    SequenceExpression : undefined,
+    AssignmentExpression : undefined,
+    ArrowFunctionExpression : undefined,
+    ConditionalExpression : undefined,
+    LogicalExpression : undefined,
+    CallExpression : undefined,
+    NewExpression : undefined,
+    MemberExpression : undefined,
+    UnaryExpression : undefined,
+    YieldExpression : undefined,
+    AwaitExpression : undefined,
+    UpdateExpression : undefined,
+    FunctionExpression : undefined,
+    ExportBatchSpecifier : undefined,
+    ArrayPattern : undefined,
+    ArrayExpression : undefined,
+    ClassExpression : undefined,
+    MethodDefinition : undefined,
+    Property : undefined,
+    ObjectExpression : undefined,
+    ObjectPattern : undefined,
+    ThisExpression : undefined,
+    Identifier : undefined,
+    ImportDefaultSpecifier : undefined,
+    ImportNamespaceSpecifier : undefined,
+    ImportSpecifier : undefined,
+    ExportSpecifier : undefined,
+    GeneratorExpression : undefined,
+    ComprehensionExpression : undefined,
+    ComprehensionBlock : undefined,
+    SpreadElement : undefined,
+    TaggedTemplateExpression : undefined,
+    TemplateElement : undefined,
+    TemplateLiteral : undefined,
+    ModuleSpecifier : undefined,
+  }
+
+
+function exprAsVal(expr) {
+  
+  var parent = expr.__parent__;
+  var pt = parent.type;
+  
+  if (pt === "AssignmentExpression") {
+    if (expr === parent.left)
+      return false;
+    else if (expr === parent.right)
+      return true;
+    else
+      throw "Unknown role for " + pt;
+  }
+
+}
+
 var Precedence = {
   Sequence : 0,
   Yield : 1,
@@ -69,6 +124,8 @@ function merge(target, override) {
   return target;
 }
 
+
+
 function emit(x) {
   console.log(line_number++ + ' : ' + x);
 }
@@ -122,43 +179,7 @@ AstCompiler.Statement = {
 
 merge(AstCompiler.prototype, AstCompiler.Statement);
 
-AstCompiler.Expression = {
-  SequenceExpression : undefined,
-  AssignmentExpression : undefined,
-  ArrowFunctionExpression : undefined,
-  ConditionalExpression : undefined,
-  LogicalExpression : undefined,
-  CallExpression : undefined,
-  NewExpression : undefined,
-  MemberExpression : undefined,
-  UnaryExpression : undefined,
-  YieldExpression : undefined,
-  AwaitExpression : undefined,
-  UpdateExpression : undefined,
-  FunctionExpression : undefined,
-  ExportBatchSpecifier : undefined,
-  ArrayPattern : undefined,
-  ArrayExpression : undefined,
-  ClassExpression : undefined,
-  MethodDefinition : undefined,
-  Property : undefined,
-  ObjectExpression : undefined,
-  ObjectPattern : undefined,
-  ThisExpression : undefined,
-  Identifier : undefined,
-  ImportDefaultSpecifier : undefined,
-  ImportNamespaceSpecifier : undefined,
-  ImportSpecifier : undefined,
-  ExportSpecifier : undefined,
-  GeneratorExpression : undefined,
-  ComprehensionExpression : undefined,
-  ComprehensionBlock : undefined,
-  SpreadElement : undefined,
-  TaggedTemplateExpression : undefined,
-  TemplateElement : undefined,
-  TemplateLiteral : undefined,
-  ModuleSpecifier : undefined,
-}
+
 
 merge(AstCompiler.prototype, AstCompiler.Expression);
 
@@ -299,6 +320,37 @@ function assert_expecting_nothing() {
 }
 
 /**
+ * 
+ * @param astroot
+ */
+function populate_parent(astroot) {
+
+  function visit(node, parent, prop, idx) {
+
+    if (!node || typeof node.type !== "string") {
+      return;
+    }
+
+    for ( var prop in node) {
+      var child = node[prop];
+
+      if (Array.isArray(child)) {
+        for (var i = 0; i < child.length; i++) {
+          visit(child[i], node, prop, i);
+        }
+      } else {
+        visit(child, node, prop);
+      }
+    }
+
+    // must be post 
+    node.__parent__ = parent;
+  }
+
+  visit(astroot, null);
+}
+
+/**
  * build the function node tree
  * 
  * @param node
@@ -373,6 +425,11 @@ function build_function_tree(node) {
     }
 
     for ( var prop in astnode) {
+
+      // bypass parent link
+      if (prop == "__parent__")
+        continue;
+
       var child = astnode[prop];
 
       if (Array.isArray(child)) {
@@ -510,6 +567,10 @@ function annotate(fnode) {
     }
 
     for ( var name in astnode) {
+
+      if (name === "__parent__")
+        continue;
+
       var prop = astnode[name];
       if (prop && typeof prop == 'object') {
         if (typeof prop.length == 'number' && prop.splice) {
@@ -572,6 +633,10 @@ function annotate(fnode) {
     }
 
     for ( var name in astnode) {
+
+      if (name === "__parent__")
+        continue;
+
       var prop = astnode[name];
       if (prop && typeof prop == 'object') {
         if (typeof prop.length == 'number' && prop.splice) {
@@ -644,6 +709,8 @@ function prepare(astroot) {
   // output ast
   console.log(JSON.stringify(astroot, null, 2));
 
+  populate_parent(astroot);
+
   var fnroot = build_function_tree(astroot);
 
   // output ftree after build
@@ -705,7 +772,7 @@ function emitLabel(fn, label) {
 }
 
 function emitJUMP(fn, to) {
-  
+
   fn.emit({
     op : "JUMP",
     arg1 : to
@@ -785,13 +852,21 @@ function compileAST(fn, ast) {
   case "Identifier":
     compileIdentifier(fn, ast);
     break;
-    
+
   case "IfStatement":
     compileIfStatement(fn, ast);
     break;
 
   case "Literal":
     compileLiteral(fn, ast);
+    break;
+
+  case "MemberExpression":
+    compileMemberExpression(fn, ast);
+    break;
+
+  case "ObjectExpression":
+    compileObjectExpression(fn, ast);
     break;
 
   case "Program":
@@ -811,7 +886,7 @@ function compileAST(fn, ast) {
     break;
 
   default:
-    console.log("Compile : " + ast.type + " not dispatched.");
+    throw "compileAST : " + ast.type + " not dispatched";
   }
 
   astlog("}");
@@ -920,7 +995,21 @@ function compileCallExpression(fn, ast) {
 // consequent: Expression;
 // }
 function compileConditionalExpression(fn, ast) {
+  throw "error";
+}
 
+//interface ExpressionStatement <: Statement {
+//type: "ExpressionStatement";
+//expression: Expression;
+//}
+function compileExpressionStatement(fn, ast) {
+
+  expect_r(ast);
+  compileAST(fn, ast.expression);
+  fn.emit({
+    op : "DROP",
+  })
+  unexpect_r(ast);
 }
 
 // interface FunctionDeclaration <: Function, Declaration {
@@ -934,7 +1023,7 @@ function compileConditionalExpression(fn, ast) {
 // expression: boolean;
 // }
 function compileFunctionDeclaration(fn, ast) {
-
+  throw "error"
 }
 
 // interface FunctionExpression <: Function, Expression {
@@ -974,8 +1063,23 @@ function compileFunctionExpression(fn, ast) {
 function compileIdentifier(fn, ast) {
 
   assert_expecting_anything();
-
   var i;
+  
+  if (ast.__parent__.type === "MemberExpression") {
+    if (ast === ast.__parent__.object) {
+      // find identifier in scope
+    }
+    else if (ast === ast.__parent__.property) {
+      // treat identifier as operator
+      fn.emit({
+        op : "LITA",
+        arg1 : "PROP",
+        arg2 : ast.name
+      })
+      return;
+    }
+  }
+  
   var found = false;
 
   if (!found) {
@@ -1037,11 +1141,9 @@ function compileIdentifier(fn, ast) {
       }
     }
   }
-
   if (!found) {
     throw "Identifier: " + ast.name + " not found";
   }
-
 }
 
 // interface IfStatement <: Statement {
@@ -1094,20 +1196,22 @@ function compileLiteral(fn, ast) {
   });
 }
 
-// interface ExpressionStatement <: Statement {
-// type: "ExpressionStatement";
-// expression: Expression;
+// interface MemberExpression <: Expression {
+// type: "MemberExpression";
+// object: Expression;
+// property: Identifier | Expression;
+// computed: boolean;
 // }
-function compileExpressionStatement(fn, ast) {
+function compileMemberExpression(fn, ast) {
 
-  expect_r(ast);
+  compileAST(fn, ast.object);
+  compileAST(fn, ast.property);
 
-  compileAST(fn, ast.expression);
-  fn.emit({
-    op : "DROP",
-  });
-
-  unexpect_r(ast);
+  if (exprAsVal(ast)) {
+    fn.emit({
+      op : "FETCH",
+    })
+  }
 }
 
 // interface ObjectExpression <: Expression {
@@ -1115,7 +1219,10 @@ function compileExpressionStatement(fn, ast) {
 // properties: [ Property ];
 // }
 function compileObjectExpression(fn, ast) {
-  
+
+  fn.emit({
+    op : "LITO",
+  })
 }
 
 // interface Program <: Node {
@@ -1242,7 +1349,6 @@ function compileFN(fn) {
 function compile(node) {
 
   var i;
-
   var fnroot = prepare(node);
 
   fnode_visit(fnroot, function(fn) {

@@ -18,6 +18,7 @@ var VT_LNK = "ObjectLink";
 var VT_FRV = "Freevar";
 var VT_LOC = "Local";
 var VT_ARG = "Arg";
+var VT_PRO = "Property";
 
 var VT_VAL = "Value";
 
@@ -56,10 +57,18 @@ var literals = [];
 
 var code = undefined;
 
+function ObjectObject() {
+  this.isPrimitive = false;
+  this.type = "object";
+  this.property = [];
+  this.ref = 0;
+}
+
 /**
  * constructor for value object (except function)
  */
 function ValueObject(value) {
+  this.isPrimitive = true;
   this.type = typeof value;
   this.value = value;
   this.ref = 0;
@@ -69,6 +78,7 @@ function ValueObject(value) {
  * constructor for function object
  */
 function FuncObject(value) {
+  this.isPrimitive = true;
   this.type = "function";
   this.value = value; // value is the jump position
   this.freevars = []; // hold freevar
@@ -506,11 +516,15 @@ function printstack() {
       if (v.type == VT_OBJ) {
         var index = v.index;
         var obj = Objects[index];
-        var prt;
-        if (obj.type === "function") {
-          prt = VT_OBJ + " " + index + " (function) " + "entry: " + obj.value
-              + ", ref: " + obj.ref;
-          console.log(i + " : " + prt);
+
+        if (obj.type === "object") {
+          console.log(i + " : " + index + " (object) ref: " + obj.ref);
+        } else if (obj.type === "function") {
+          var func_prt = VT_OBJ + " " + index + " (function) " + "entry: "
+              + obj.value + ", ref: " + obj.ref;
+          console.log(i + " : " + func_prt);
+        } else if (obj.type === "undefined") {
+          console.log(i + " : " + "UNDEFINED");
         } else {
           console.log(i + " : " + VT_OBJ + ", index: " + index + ", value: "
               + obj.value + ", ref: " + obj.ref);
@@ -710,6 +724,9 @@ function step(code, bytecode) {
     } else if (bytecode.arg1 === 'FRVAR') {
       v = new JSVar(VT_FRV, bytecode.arg2);
       stack.push(v);
+    } else if (bytecode.arg1 === "PROP") {
+      v = new JSVar(VT_PRO, bytecode.arg2);
+      stack.push(v);
     } else
       throw "not supported yet";
 
@@ -729,6 +746,13 @@ function step(code, bytecode) {
     for (var i = 0; i < bytecode.arg1; i++) {
       stack.push(new JSVar(VT_OBJ, 0));
     }
+    break;
+
+  case "LITO":
+    // create an object object and push to stack
+    obj = Objects.push(new ObjectObject()) - 1;
+    v = new JSVar(VT_OBJ, obj);
+    push(v);
     break;
 
   case "MUL":
@@ -833,7 +857,7 @@ function step(code, bytecode) {
     break;
 
   default:
-    console.log("!!! unknown instruction : " + bytecode.op);
+    throw "!!! unknown instruction : " + bytecode.op;
   }
 }
 
