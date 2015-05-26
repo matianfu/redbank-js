@@ -421,7 +421,7 @@ function annotate(fnode) {
   }
 
   /**
-   * check if Identifier already in parameter tabel
+   * check if Identifier already in parameter table
    */
   function find_name_in_parameters(name) {
     var i;
@@ -523,6 +523,11 @@ function annotate(fnode) {
       }
     }
   }
+  
+  /**
+   * this stack is used to check parent node type
+   */
+  var ast_stack = [];
 
   /**
    * fill fnode's freevar table
@@ -531,12 +536,13 @@ function annotate(fnode) {
 
     var name = undefined;
 
-    if (astnode.type === "AssignmentExpression"
-        && astnode.left.type === "Identifier") {
-      name = astnode.left.name;
-    } else if (astnode.type === "MemberExpression"
-        && astnode.object.type === "Identifier") {
-      name = astnode.object.name;
+    if (astnode.type === "Identifier") {
+      if (ast_stack.length > 0 && ast_stack[0].type === "MemberExpression" && astnode === ast_stack[0].property) {
+        // bypass property identifier but not object 
+      }
+      else {
+        name = astnode.name;
+      }
     } else if (astnode.type == 'FunctionDeclaration') {
       return; // Do not recurse into function.
     } else if (astnode.type == 'FunctionExpression') {
@@ -557,17 +563,12 @@ function annotate(fnode) {
         });
         console.log('id: ' + name + ' set as new freevar');
       }
-
     }
 
     function recurse(child) {
-      // this test assures the node has the same constructor with the ast (acorn
-      // / esprima)
-      // but don't know it's reasoin
-      // if (child.constructor == thisIterpreter.ast.constructor) {
-      // thisIterpreter.populateScope_(child, scope);
+      ast_stack.unshift(astnode);
       fill_ids(child);
-      // }
+      ast_stack.shift(astnode);
     }
 
     for ( var name in astnode) {
@@ -590,9 +591,9 @@ function annotate(fnode) {
   fill_ids(astnode.body);
 
   console.log("fnode : " + fnode.uid);
-  console.log(fnode.parameters);
-  console.log(fnode.locals);
-  console.log(fnode.freevars);
+  console.log("  parameters: " + JSON.stringify(fnode.parameters));
+  console.log("  locals: " + JSON.stringify(fnode.locals));
+  console.log("  freevars: " + JSON.stringify(fnode.freevars));
 };
 
 function resolve_freevar(parent, freevar) {
@@ -812,6 +813,15 @@ function compileBinaryExpression(fn, ast) {
       op : 'MUL'
     });
     break;
+    
+  case "===":
+    fn.emit({
+      op : '==='
+    });
+    break;
+    
+  default:
+    throw "unsupported binary operator";
   }
 
   unexpect_r();
@@ -838,22 +848,24 @@ function compileCallExpression(fn, ast) {
 
   assert_expecting_r();
 
+  // put parameters
   for (var i = 0; i < ast.arguments.length; i++) {
+    expect_r(ast);
     compileAST(fn, ast.arguments[i]);
+    unexpect_r(ast);
   }
 
   // put argc
-  // TODO pretend no args now
   fn.emit({
-    op : "VAL",
+    op : "LITC",
     arg1 : ast.arguments.length
   });
 
   // put this
-  // TODO pretend null now
+  // TODO pretend undefined now
   fn.emit({
-    op : "VAL",
-    arg1 : 0
+    op : "LITN",
+    arg1 : 1
   });
 
   // put callee, may evaluate to lvalue
@@ -866,6 +878,17 @@ function compileCallExpression(fn, ast) {
     op : "CALL"
   });
 }
+
+// interface ConditionalExpression <: Expression {
+// type: "ConditionalExpression";
+// test: Expression;
+// alternate: Expression;
+// consequent: Expression;
+// }
+function compileConditionalExpression(fn, ast) {
+  
+}
+
 
 // interface FunctionDeclaration <: Function, Declaration {
 // type: "FunctionDeclaration";
@@ -898,7 +921,7 @@ function compileFunctionExpression(fn, ast) {
   // construct function object
   fn.emit({
     op : 'FUNC',
-    arg1 : sub_fn,  // replace with offset in backpatching
+    arg1 : sub_fn, // replace with offset in backpatching
     arg2 : l
   });
 
@@ -970,7 +993,7 @@ function compileIdentifier(fn, ast) {
           arg1 : 'FRVAR',
           arg2 : i
         });
-        
+
         if (expecting_r()) {
           fn.emit({
             op : 'FETCH'
@@ -1131,8 +1154,7 @@ function compileFN(fn) {
     throw "Unexpected fnode ast type";
   }
 
-  if (fn.code.length > 0
-      && fn.code[fn.code.length - 1].op === "RET")
+  if (fn.code.length > 0 && fn.code[fn.code.length - 1].op === "RET")
     return;
 
   fn.emit({

@@ -187,6 +187,13 @@ function object_ref_incr(index) {
   Objects[index].ref++;
 }
 
+/**
+ * Decrement object's reference count
+ * 
+ * If the object is function object, the freevars are cleared
+ * 
+ * @param index
+ */
 function object_ref_decr(index) {
 
   if (index === 0)
@@ -210,15 +217,30 @@ function link_ref_incr(index) {
   Links[index].ref++;
 }
 
+/**
+ * Decrement link's reference count
+ * 
+ * If links reference count down to zero, the referenced object's reference
+ * decrements and the link is cleared.
+ * 
+ * @param index
+ *          link index
+ */
 function link_ref_decr(index) {
+
   Links[index].ref--;
 
   if (Links[index].ref === 0) {
     object_ref_decr(Links[index].object);
-    Links[index].ref = undefined;
+    Links[index] = undefined;
   }
 }
 
+/**
+ * Get the freevar array of current function
+ * 
+ * @returns
+ */
 function freevars() {
 
   if (FP === 0)
@@ -245,6 +267,24 @@ function lid2sid(lid) {
 }
 
 /**
+ * Get current function's argument count
+ * 
+ * 
+ * @returns argument count
+ */
+function ARGC() {
+
+  if (FP === 0)
+    throw "main function has no args";
+
+  var v = stack[FP - 3];
+
+  assert_var_object_number(v);
+
+  return Objects[v.index].value;
+}
+
+/**
  * convert parameter index to (absolute) stack index
  * 
  * @param pid
@@ -252,8 +292,14 @@ function lid2sid(lid) {
  * @returns
  */
 function pid2sid(pid) {
-  var argc = stack[FP - 3].index;
-  return FP - 3 - argc + pid;
+
+  // var v = stack[FP - 3];
+  //  
+  // assert_var_object_number(v);
+  //  
+  // // var argc = stack[FP - 3].index;
+  // var argc = Objects[v.index].value;
+  return FP - 3 - ARGC() + pid;
 }
 
 /**
@@ -275,27 +321,28 @@ function push(v) {
   }
 }
 
+/**
+ * 
+ * @returns
+ */
 function pop() {
 
   var v = stack.pop();
 
   if (v.type === VT_OBJ) {
-//    Objects[v.index].ref--;
-//    if (Objects[v.index].ref === 0) {
-//      Objects[v.index] = undefined;
-//    }
     object_ref_decr(v.index);
   } else if (v.type === VT_LNK) {
-//    Links[v.index].ref--;
-//    if (Links[v.index].ref === 0) {
-//      Links[v.index] = undefined;
-//    }
     link_ref_decr(v.index);
   }
 
   return v;
 }
 
+/**
+ * Swap TOS and NOS
+ * 
+ * FORTH: N1, N1 -- N2, N1
+ */
 function swap() {
   var n1, n2;
   n1 = stack.pop();
@@ -407,7 +454,7 @@ function store() {
 }
 
 /**
- * Assign N1 to addr and left N1 as TOS 
+ * Assign N1 to addr and left N1 as TOS
  * 
  * FORTH: addr, N1 -- N1
  */
@@ -494,7 +541,7 @@ function printfreevar() {
     if (f.type !== VT_LNK)
       throw "error freevar type";
 
-    console.log(i + " : " + "disp id: " + f.index + ", ref: "
+    console.log(i + " : " + "link id: " + f.index + ", ref: "
         + Links[f.index].ref + ", obj: " + Links[f.index].object);
   }
 }
@@ -677,9 +724,9 @@ function step(bytecode) {
       PC = code.length; // exit
 
     } else {
-      // pop all temps and locals
 
       var result = undefined;
+      var argc = ARGC();
 
       if (bytecode.arg1 === "RESULT") {
         result = stack.pop();
@@ -691,22 +738,16 @@ function step(bytecode) {
 
       pop(); // pop function object
       pop(); // pop this object
-
-      v = TOS(); // argc
-      var argc = v.index;
-
       pop(); // argc
       for (i = 0; i < argc; i++) {
         pop(); // pop params
       }
 
-      // get back fp and pc
+      // restore fp and pc
       PC = pc_stack.pop();
       FP = fp_stack.pop();
 
-      // put a pseudo return value on stack
-      if (result === undefined) {
-        // v = new JSVar(VT_OBJ, 0);
+      if (result === undefined) { // no return value provided
         stack.push(new JSVar(VT_OBJ, 0));
       } else {
         stack.push(result);
@@ -725,6 +766,29 @@ function step(bytecode) {
 
   case '=':
     assign();
+    break;
+    
+  case '===':
+    
+    assert_var_object(TOS());
+    assert_var_object(NOS());
+    
+    if (TOS().type === NOS().type && 
+        Objects[TOS().index].type === Objects[NOS().index].type &&
+        Objects[TOS().index].value === Objects[NOS().index].value) {
+      v = new ValueObject(true);
+    }
+    else {
+      v = new ValueObject(false);
+    }
+    
+    index = Objects.push(v) - 1;
+    v = new JSVar(VT_OBJ, index);
+    
+    pop();
+    pop();
+    push(v);
+    
     break;
 
   default:
