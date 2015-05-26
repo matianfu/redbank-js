@@ -3,6 +3,9 @@
  * Virtual Machine
  * 
  ******************************************************************************/
+
+var rb_tester;
+
 /**
  * var type constant
  * 
@@ -17,7 +20,7 @@ var VT_LNK = "ObjectLink";
 
 var VT_FRV = "Freevar";
 var VT_LOC = "Local";
-var VT_ARG = "Arg";
+var VT_ARG = "Argument";
 var VT_PRO = "Property";
 
 var VT_VAL = "Value";
@@ -58,10 +61,43 @@ var literals = [];
 var code = undefined;
 
 function ObjectObject() {
+
+  function find_property(name) {
+    for (var i = 0; i < this.properties.length; i++) {
+      if (this.properties[i].name === name)
+        return i;
+    }
+  }
+
+  function set_property(name, object_index) {
+    var i = this.find_property(name);
+    if (i === undefined) {
+      this.properties.push({
+        name : name,
+        index : object_index
+      });
+
+      object_ref_incr(object_index);
+    } else {
+      var old = this.properties[i].index;
+      this.properties[i].index = object_index;
+
+      object_ref_incr(object_index);
+      object_ref_decr(old);
+    }
+  }
+
+  function get_property(name) {
+
+  }
+
   this.isPrimitive = false;
   this.type = "object";
-  this.property = [];
+  this.properties = [];
   this.ref = 0;
+  this.find_property = find_property;
+  this.set_property = set_property;
+  this.get_property = get_property;
 }
 
 /**
@@ -109,6 +145,13 @@ function TOS() {
  */
 function NOS() {
   return stack[stack.length - 2];
+}
+
+/**
+ * The 3rd cell on stack
+ */
+function ThirdOS() {
+  return stack[stack.length - 3];
 }
 
 /**
@@ -161,8 +204,16 @@ function getval_var_object_boolean(v) {
   return Objects[v.index].value;
 }
 
+function assert_var_object_object(v) {
+  if (v.type !== VT_OBJ)
+    throw "var is not an object, assert fail";
+  if (Objects[v.index].type !== "object")
+    throw "var -> object is not an object object assert fail";
+}
+
 function assert_var_addr(v) {
-  if (v.type === VT_LOC || v.type === VT_ARG || v.type === VT_FRV)
+  if (v.type === VT_LOC || v.type === VT_ARG || v.type === VT_FRV
+      || v.type === VT_PRO)
     return;
   else
     throw "var is not an address, assert fail";
@@ -187,6 +238,13 @@ function assert_var_addr_frvar(v) {
     return;
   else
     throw "var is not an freevar address";
+}
+
+function assert_var_addr_prop(v) {
+  if (v.type === VT_PRO)
+    return;
+  else
+    throw "var is not an property address";
 }
 
 function verify_vartype_parameter() {
@@ -215,7 +273,8 @@ function object_ref_incr(index) {
 /**
  * Decrement object's reference count
  * 
- * If the object is function object, the freevars are cleared
+ * If the object is a function object, the freevars are cleared; if the object
+ * is an object object, the properties are cleared.
  * 
  * @param index
  */
@@ -228,9 +287,14 @@ function object_ref_decr(index) {
   if (Objects[index].ref === 0) {
 
     var obj = Objects[index];
+
     if (obj.type === "function") {
       for (var i = 0; i < obj.freevars.length; i++) {
         link_ref_decr(obj.freevars[i].index);
+      }
+    } else if (obj.type === "object") {
+      for (var i = 0; i < obj.properties.length; i++) {
+        object_ref_decr(obj.properties[i].index);
       }
     }
 
@@ -446,6 +510,17 @@ function set_to_frvar(addr, objvar) {
     throw "unrecognized var type in frvar slot";
 }
 
+function set_to_object_prop(dst_objvar, propvar, src_objvar) {
+
+  assert_var_object_object(dst_objvar);
+  assert_var_addr_prop(propvar);
+
+  var dst_object_index = dst_objvar.index;
+  var dst_object = Objects[dst_object_index];
+
+  dst_object.set_property(propvar.index, src_objvar.index);
+}
+
 /**
  * Store N1 to addr
  * 
@@ -500,6 +575,12 @@ function assign() {
     pop();
   } else if (addr.type === VT_FRV) {
     set_to_frvar(NOS(), TOS());
+    swap();
+    pop();
+  } else if (addr.type === VT_PRO) {
+    set_to_object_prop(ThirdOS(), NOS(), TOS());
+    swap();
+    pop();
     swap();
     pop();
   } else
@@ -593,25 +674,7 @@ function step(code, bytecode) {
   var opd1, opd2;
 
   switch (bytecode.op) {
-  case "ADD":
-    // assert, only number supported up to now
-    assert_var_object_number(TOS());
-    assert_var_object_number(NOS());
 
-    // do calculation
-    v = Objects[NOS().index].value + Objects[TOS().index].value;
-
-    // pop operand
-    pop();
-    pop();
-
-    // create new value object
-    // TODO using alloc
-    obj = Objects.push(new ValueObject(v)) - 1;
-
-    // push result on stack
-    push(new JSVar(VT_OBJ, obj));
-    break;
 
   case "CALL":
     v = TOS();
@@ -659,7 +722,7 @@ function step(code, bytecode) {
     pop();
     break;
 
-  case "FETCH": // addr -- n1
+  case "FETCH": // addr -- n1 or O1, prop1 -- O2
     var addr = stack.pop();
     if (addr.type === VT_LOC) {
       v = stack[lid2sid(addr.index)];
@@ -681,6 +744,8 @@ function step(code, bytecode) {
         v = new JSVar(VT_OBJ, Links[v.index].object);
       } else
         throw "Unsupported var type in frvar slot";
+    } else if (addr.type === VT_PRO) {
+
     } else
       throw "not supported yet.";
     push(v);
@@ -755,30 +820,10 @@ function step(code, bytecode) {
     push(v);
     break;
 
-  case "MUL":
-    // assert, only number supported up to now
-    assert_var_object_number(TOS());
-    assert_var_object_number(NOS());
-
-    // do calculation
-    v = Objects[NOS().index].value * Objects[TOS().index].value;
-
-    // pop operand
-    pop();
-    pop();
-
-    // create new value object
-    // TODO using alloc
-    obj = Objects.push(new ValueObject(v)) - 1;
-
-    // push result on stack
-    push(new JSVar(VT_OBJ, obj));
-    // multiply stack top object and pop
-    // val = pop();
-    // val = pop() * val;
-    // obj = objects.push(new ValueObject(val)) - 1;
-    // v = new JSVar(VT_OBJ, obj);
-    // push(v);
+  case "RBTEST":
+    if (rb_tester !== undefined) {
+      rb_tester[bytecode.arg1](this);
+    }
     break;
 
   case "RET":
@@ -786,7 +831,6 @@ function step(code, bytecode) {
       while (stack.length) {
         pop();
       }
-
       PC = code.length; // exit
 
     } else {
@@ -829,6 +873,46 @@ function step(code, bytecode) {
     v = new JSVar(VT_VAL, bytecode.arg1);
     stack.push(v);
     break;
+    
+  case "+":
+    // assert, only number supported up to now
+    assert_var_object_number(TOS());
+    assert_var_object_number(NOS());
+
+    // do calculation
+    v = Objects[NOS().index].value + Objects[TOS().index].value;
+
+    // pop operand
+    pop();
+    pop();
+
+    // create new value object
+    // TODO using alloc
+    obj = Objects.push(new ValueObject(v)) - 1;
+
+    // push result on stack
+    push(new JSVar(VT_OBJ, obj));
+    break;    
+    
+  case "*":
+    // assert, only number supported up to now
+    assert_var_object_number(TOS());
+    assert_var_object_number(NOS());
+
+    // do calculation
+    v = Objects[NOS().index].value * Objects[TOS().index].value;
+
+    // pop operand
+    pop();
+    pop();
+
+    // create new value object
+    // TODO using alloc
+    obj = Objects.push(new ValueObject(v)) - 1;
+
+    // push result on stack
+    push(new JSVar(VT_OBJ, obj));
+    break;    
 
   case '=':
     assign();
@@ -861,9 +945,10 @@ function step(code, bytecode) {
   }
 }
 
-function run(input) {
+function run(input, tester) {
 
   code = input;
+  rb_tester = tester;
 
   Objects[0] = new ValueObject(undefined);
   Objects[0].ref = -1;
@@ -892,5 +977,7 @@ function run(input) {
   printfreevar();
   assert_no_leak();
 }
+
+
 
 exports.run = run;

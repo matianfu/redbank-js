@@ -1,151 +1,11 @@
 'use strict';
 
+var USE_RB_TEST = true;
+
 var estraverse = require('estraverse');
 var esutils = require('esutils');
 
-var Syntax = estraverse.Syntax;
-
-AstCompiler.Expression = {
-    SequenceExpression : undefined,
-    AssignmentExpression : undefined,
-    ArrowFunctionExpression : undefined,
-    ConditionalExpression : undefined,
-    LogicalExpression : undefined,
-    CallExpression : undefined,
-    NewExpression : undefined,
-    MemberExpression : undefined,
-    UnaryExpression : undefined,
-    YieldExpression : undefined,
-    AwaitExpression : undefined,
-    UpdateExpression : undefined,
-    FunctionExpression : undefined,
-    ExportBatchSpecifier : undefined,
-    ArrayPattern : undefined,
-    ArrayExpression : undefined,
-    ClassExpression : undefined,
-    MethodDefinition : undefined,
-    Property : undefined,
-    ObjectExpression : undefined,
-    ObjectPattern : undefined,
-    ThisExpression : undefined,
-    Identifier : undefined,
-    ImportDefaultSpecifier : undefined,
-    ImportNamespaceSpecifier : undefined,
-    ImportSpecifier : undefined,
-    ExportSpecifier : undefined,
-    GeneratorExpression : undefined,
-    ComprehensionExpression : undefined,
-    ComprehensionBlock : undefined,
-    SpreadElement : undefined,
-    TaggedTemplateExpression : undefined,
-    TemplateElement : undefined,
-    TemplateLiteral : undefined,
-    ModuleSpecifier : undefined,
-  }
-
-
-function exprAsVal(expr) {
-  
-  var parent = expr.__parent__;
-  var pt = parent.type;
-  
-  if (pt === "AssignmentExpression") {
-    if (expr === parent.left)
-      return false;
-    else if (expr === parent.right)
-      return true;
-    else
-      throw "Unknown role for " + pt;
-  }
-
-}
-
-var Precedence = {
-  Sequence : 0,
-  Yield : 1,
-  Await : 1,
-  Assignment : 1,
-  Conditional : 2,
-  ArrowFunction : 2,
-  LogicalOR : 3,
-  LogicalAND : 4,
-  BitwiseOR : 5,
-  BitwiseXOR : 6,
-  BitwiseAND : 7,
-  Equality : 8,
-  Relational : 9,
-  BitwiseSHIFT : 10,
-  Additive : 11,
-  Multiplicative : 12,
-  Unary : 13,
-  Postfix : 14,
-  Call : 15,
-  New : 16,
-  TaggedTemplate : 17,
-  Member : 18,
-  Primary : 19
-};
-
-var BinaryPrecedence = {
-  '||' : Precedence.LogicalOR,
-  '&&' : Precedence.LogicalAND,
-  '|' : Precedence.BitwiseOR,
-  '^' : Precedence.BitwiseXOR,
-  '&' : Precedence.BitwiseAND,
-  '==' : Precedence.Equality,
-  '!=' : Precedence.Equality,
-  '===' : Precedence.Equality,
-  '!==' : Precedence.Equality,
-  'is' : Precedence.Equality,
-  'isnt' : Precedence.Equality,
-  '<' : Precedence.Relational,
-  '>' : Precedence.Relational,
-  '<=' : Precedence.Relational,
-  '>=' : Precedence.Relational,
-  'in' : Precedence.Relational,
-  'instanceof' : Precedence.Relational,
-  '<<' : Precedence.BitwiseSHIFT,
-  '>>' : Precedence.BitwiseSHIFT,
-  '>>>' : Precedence.BitwiseSHIFT,
-  '+' : Precedence.Additive,
-  '-' : Precedence.Additive,
-  '*' : Precedence.Multiplicative,
-  '%' : Precedence.Multiplicative,
-  '/' : Precedence.Multiplicative
-};
-
-function merge(target, override) {
-  var key;
-  for (key in override) {
-    if (override.hasOwnProperty(key)) {
-      target[key] = override[key];
-    }
-  }
-  return target;
-}
-
-
-
-function emit(x) {
-  console.log(line_number++ + ' : ' + x);
-}
-
-var line_number = 0;
-
-// Generation is done by generateExpression.
-function isExpression(node) {
-  return AstCompiler.Expression.hasOwnProperty(node.type);
-}
-
-// Generation is done by generateStatement.
-function isStatement(node) {
-  return AstCompiler.Statement.hasOwnProperty(node.type);
-}
-
-function AstCompiler() {
-}
-
-// statement
+var AstCompiler = {};
 
 AstCompiler.Statement = {
   BlockStatement : undefined,
@@ -175,36 +35,85 @@ AstCompiler.Statement = {
   ReturnStatement : undefined,
   WhileStatement : undefined,
   WithStatement : undefined,
-}
-
-merge(AstCompiler.prototype, AstCompiler.Statement);
-
-
-
-merge(AstCompiler.prototype, AstCompiler.Expression);
-
-AstCompiler.prototype.generateStatement = function(stmt, flags) {
-  var result, fragment;
-
-  result = this[stmt.type](stmt, flags);
-  //
-  // // Attach comments
-  //
-  // if (extra.comment) {
-  // result = addComments(stmt, result);
-  // }
-  //
-  // fragment = toSourceNodeWhenNeeded(result).toString();
-  // if (stmt.type === Syntax.Program && !safeConcatenation && newline ===
-  // '' && fragment.charAt(fragment.length - 1) === '\n') {
-  // result = sourceMap ? toSourceNodeWhenNeeded(result).replaceRight(/\s+$/,
-  // '') :
-  // fragment.replace(/\s+$/, '');
-  // }
-  //
-  // return toSourceNodeWhenNeeded(result, stmt);
 };
 
+AstCompiler.Expression = {
+  SequenceExpression : undefined,
+  AssignmentExpression : undefined,
+  ArrowFunctionExpression : undefined,
+  ConditionalExpression : undefined,
+  LogicalExpression : undefined,
+  CallExpression : undefined,
+  NewExpression : undefined,
+  MemberExpression : undefined,
+  UnaryExpression : undefined,
+  YieldExpression : undefined,
+  AwaitExpression : undefined,
+  UpdateExpression : undefined,
+  FunctionExpression : undefined,
+  ExportBatchSpecifier : undefined,
+  ArrayPattern : undefined,
+  ArrayExpression : undefined,
+  ClassExpression : undefined,
+  MethodDefinition : undefined,
+  Property : undefined,
+  ObjectExpression : undefined,
+  ObjectPattern : undefined,
+  ThisExpression : undefined,
+  Identifier : undefined,
+  ImportDefaultSpecifier : undefined,
+  ImportNamespaceSpecifier : undefined,
+  ImportSpecifier : undefined,
+  ExportSpecifier : undefined,
+  GeneratorExpression : undefined,
+  ComprehensionExpression : undefined,
+  ComprehensionBlock : undefined,
+  SpreadElement : undefined,
+  TaggedTemplateExpression : undefined,
+  TemplateElement : undefined,
+  TemplateLiteral : undefined,
+  ModuleSpecifier : undefined,
+};
+
+/**
+ * This function tells if current expr should be evaluated as address or value
+ * 
+ * @param expr
+ *          an expression ast node
+ * @returns {Boolean} true if expr should be evaluated as value.
+ */
+function exprAsVal(expr) {
+
+  var parent = expr.__parent__;
+  var pt = parent.type;
+
+  if (pt === "AssignmentExpression") {
+    if (expr === parent.left)
+      return false;
+    else if (expr === parent.right)
+      return true;
+    else
+      throw "Unknown role for " + pt;
+  } else if(pt === "MemberExpression") {
+    if (expr === parent.object)
+      return true;
+    else if (expr === parent.property)
+      return false;
+    else
+      throw "Unknown role for " + pt;
+  } else
+    throw "not supported yet";
+};
+
+/**
+ * Visit function node, apply pre or post on node
+ * 
+ * @param fnode
+ * @param pre
+ *          pre-operation
+ * @param post
+ *          post-operation
+ */
 function fnode_visit(fnode, pre, post) {
 
   if (pre)
@@ -218,6 +127,9 @@ function fnode_visit(fnode, pre, post) {
     post(fnode);
 }
 
+/**
+ * for print
+ */
 var indent = "";
 var indent_size = 0;
 
@@ -242,6 +154,8 @@ function indent_decr() {
 function astlog(x) {
   console.log(indent + x);
 }
+
+
 
 var lr_stack = [];
 
@@ -320,6 +234,8 @@ function assert_expecting_nothing() {
 }
 
 /**
+ * This function generate a __parent__ property in each ast node, pointing to
+ * it's parent
  * 
  * @param astroot
  */
@@ -343,12 +259,21 @@ function populate_parent(astroot) {
       }
     }
 
-    // must be post 
+    // must be post
     node.__parent__ = parent;
   }
 
   visit(astroot, null);
-}
+};
+
+function emitcode(f, o, a1, a2, a3) {
+  f.emit({
+    op : o,
+    arg1 : a1,
+    arg2 : a2,
+    arg3 : a3,
+  })
+};
 
 /**
  * build the function node tree
@@ -372,9 +297,7 @@ function build_function_tree(node) {
       return;
     }
 
-    // console.log('visit: ' + astnode.type);
-
-    function emitcode(instruction) {
+    function emit(instruction) {
       this.code.push(instruction);
 
       console.log('                                ..........' + instruction.op
@@ -393,7 +316,7 @@ function build_function_tree(node) {
         locals : [],
         freevars : [],
         code : [],
-        emit : emitcode,
+        emit : emit,
       };
 
       // reverse annotation for debug
@@ -598,9 +521,14 @@ function annotate(fnode) {
     var name = undefined;
 
     if (astnode.type === "Identifier") {
-      if (ast_stack.length > 0 && ast_stack[0].type === "MemberExpression"
+      
+      if (USE_RB_TEST === true && astnode.name === "rb_test" &&
+          astnode.__parent__.type === "CallExpression") {
+        // bypass this identifier
+      }
+      else if (ast_stack.length > 0 && ast_stack[0].type === "MemberExpression"
           && astnode === ast_stack[0].property) {
-        // bypass property identifier but not object 
+        // bypass property identifier but not object
       } else {
         name = astnode.name;
       }
@@ -633,7 +561,6 @@ function annotate(fnode) {
     }
 
     for ( var name in astnode) {
-
       if (name === "__parent__")
         continue;
 
@@ -913,13 +840,13 @@ function compileBinaryExpression(fn, ast) {
   switch (ast.operator) {
   case '+':
     fn.emit({
-      op : 'ADD'
+      op : '+'
     });
     break;
 
   case '*':
     fn.emit({
-      op : 'MUL'
+      op : '*'
     });
     break;
 
@@ -941,11 +868,9 @@ function compileBinaryExpression(fn, ast) {
 // body: [ Statement ];
 // }
 function compileBlockStatement(fn, ast) {
-
   for (var i = 0; i < ast.body.length; i++) {
     compileAST(fn, ast.body[i]);
   }
-
 }
 
 // interface CallExpression <: Expression {
@@ -956,6 +881,18 @@ function compileBlockStatement(fn, ast) {
 function compileCallExpression(fn, ast) {
 
   assert_expecting_r();
+  
+  if (USE_RB_TEST && 
+      ast.callee.type === "Identifier" &&
+      ast.callee.name === "rb_test") {
+    
+    if (ast.arguments.length !== 1 || ast.arguments[0].type !== "Literal")
+      throw "Incorrect rb_test usage";
+    
+    emitcode(fn, "RBTEST", ast.arguments[0].value);
+    emitcode(fn, "LITN", 1);
+    return;
+  }
 
   // put parameters
   for (var i = 0; i < ast.arguments.length; i++) {
@@ -998,10 +935,10 @@ function compileConditionalExpression(fn, ast) {
   throw "error";
 }
 
-//interface ExpressionStatement <: Statement {
-//type: "ExpressionStatement";
-//expression: Expression;
-//}
+// interface ExpressionStatement <: Statement {
+// type: "ExpressionStatement";
+// expression: Expression;
+// }
 function compileExpressionStatement(fn, ast) {
 
   expect_r(ast);
@@ -1056,6 +993,30 @@ function compileFunctionExpression(fn, ast) {
   }
 }
 
+function find_name_in_params(fn, name) {
+  for (var i = 0; i < fn.parameters.length; i++) {
+    if (fn.parameters[i].name === name) {
+      return i;
+    }
+  }
+}
+
+function find_name_in_locals(fn, name) {
+  for (var i = 0; i < fn.locals.length; i++) {
+    if (fn.locals[i].name === name) {
+      return i;
+    }
+  }
+}
+
+function find_name_in_freevars(fn, name) {
+  for (var i = 0; i < fn.freevars.length; i++) {
+    if (fn.freevars[i].name === name) {
+      return i;
+    }
+  }
+}
+
 // interface Identifier <: Node, Expression, Pattern {
 // type: "Identifier";
 // name: string;
@@ -1064,85 +1025,47 @@ function compileIdentifier(fn, ast) {
 
   assert_expecting_anything();
   var i;
-  
+
   if (ast.__parent__.type === "MemberExpression") {
     if (ast === ast.__parent__.object) {
       // find identifier in scope
-    }
-    else if (ast === ast.__parent__.property) {
+    } else if (ast === ast.__parent__.property) {
       // treat identifier as operator
-      fn.emit({
-        op : "LITA",
-        arg1 : "PROP",
-        arg2 : ast.name
-      })
+      emitcode(fn, "LITA", "PROP", ast.name);
       return;
     }
   }
-  
-  var found = false;
 
-  if (!found) {
-    for (i = 0; i < fn.parameters.length; i++) {
-      if (fn.parameters[i].name === ast.name) {
-        fn.emit({
-          op : 'LITA',
-          arg1 : 'PARAM',
-          arg2 : i
-        });
-
-        if (expecting_r()) {
-          fn.emit({
-            op : 'FETCH'
-          })
-        }
-        found = true;
-        break;
-      }
-    }
-  }
-
-  if (!found) {
-    for (i = 0; i < fn.locals.length; i++) {
-      if (fn.locals[i].name === ast.name) {
-        fn.emit({
-          op : 'LITA',
-          arg1 : 'LOCAL',
-          arg2 : i
-        });
-
-        if (expecting_r()) {
-          fn.emit({
-            op : 'FETCH'
-          });
-        }
-        found = true;
-        break;
-      }
-    }
-  }
-
-  if (!found) {
-    for (i = 0; i < fn.freevars.length; i++) {
-      if (fn.freevars[i].name === ast.name) {
+  var index = find_name_in_params(fn, ast.name);
+  if (index !== undefined) {
+    fn.emit({
+      op : 'LITA',
+      arg1 : 'PARAM',
+      arg2 : index
+    })
+  } else {
+    index = find_name_in_locals(fn, ast.name);
+    if (index !== undefined) {
+      fn.emit({
+        op : 'LITA',
+        arg1 : 'LOCAL',
+        arg2 : index
+      })
+    } else {
+      index = find_name_in_freevars(fn, ast.name);
+      if (index !== undefined) {
         fn.emit({
           op : 'LITA',
           arg1 : 'FRVAR',
-          arg2 : i
-        });
-
-        if (expecting_r()) {
-          fn.emit({
-            op : 'FETCH'
-          });
-        }
-        found = true;
-        break;
-      }
+          arg2 : 'index'
+        })
+      } else
+        throw "Identifier: " + ast.name + " not found";
     }
   }
-  if (!found) {
-    throw "Identifier: " + ast.name + " not found";
+
+  if (exprAsVal(ast)) {    
+    emitcode(fn, "FETCH");
   }
 }
 
@@ -1208,9 +1131,10 @@ function compileMemberExpression(fn, ast) {
   compileAST(fn, ast.property);
 
   if (exprAsVal(ast)) {
-    fn.emit({
-      op : "FETCH",
-    })
+    // fn.emit({
+    // op : "FETCH",
+    // })
+    emitcode(fn, "FETCH");
   }
 }
 
@@ -1219,10 +1143,7 @@ function compileMemberExpression(fn, ast) {
 // properties: [ Property ];
 // }
 function compileObjectExpression(fn, ast) {
-
-  fn.emit({
-    op : "LITO",
-  })
+  emitcode(fn, "LITO");
 }
 
 // interface Program <: Node {
@@ -1318,6 +1239,7 @@ function compileVariableDeclarator(fn, ast) {
 
 /**
  * compile a function node
+ * 
  * @param fn
  */
 function compileFN(fn) {

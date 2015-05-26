@@ -21,7 +21,13 @@ var generate_source_with_escodegen = false;
 var test_group_001 = [
     {
       name : "one_line_literal", // 0
-      text : '1000;',
+      text : '1000; rb_test("hello");',
+      test : {
+        hello : function(vm) {
+          
+          console.log(vm.PC);
+        }
+      }
     },
     {
       name : "one_line_expr_add", // 1
@@ -108,14 +114,17 @@ test_group_003 = [ {
   name : "empty object assignment", // 0
   text : 'var a; a = {}'
 }, {
-  name : "object property assignment", // 1
+  name : "member expression assignment", // 1
   text : 'var a; a = {}; a.x = 1;'
+}, {
+  name : "assignment from member expression", // 2
+  text : 'var a; a = {}; a.x = 138; var b; b = a.x;'
 }, {
   name : "",
   text : 'var a; a = { x: 1 };' // 2
 } ]
 
-var source = test_group_003[1].text;
+var source = test_group_001[0].text;
 
 if (run_with_jsinterpreter) {
   var interpreter = JSInterpreter.BuildInterpreter(source);
@@ -138,14 +147,4 @@ var bytecodes = Compiler.compile(ast);
 
 console.log(source);
 
-VM.run(bytecodes);
-
-Y = function(le) {
-  return (function(f) {
-    return f(f);
-  }(function(f) {
-    return le(function(x) {
-      return f(f)(x);
-    });
-  }));
-}
+VM.run(bytecodes, test_group_001[0].test);
