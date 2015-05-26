@@ -6,6 +6,14 @@
 
 var rb_tester;
 
+var hulahula = {
+  code : "hello",
+  text : "world",
+  talk : function() {
+    console.log(this.code + " " + this.text);
+  }
+}
+
 /**
  * var type constant
  * 
@@ -34,17 +42,16 @@ var VT_NIL = "Null";
 var PC = 0;
 var FP = 0;
 
-var pc_stack = [];
-var fp_stack = [];
+var PCStack = [];
+var FPStack = [];
 
-var stack = [];
-
-/**
- * each cell in display has a reference count and a object id
- */
+var Stack = [];
+var Objects = [];
 var Links = [];
 
-function alloc_display() {
+var code = undefined;
+
+function alloc_link() {
 
   for (var i = 0; i < Links.length; i++) {
     if (Links[i] === undefined)
@@ -53,12 +60,6 @@ function alloc_display() {
 
   return Links.length;
 }
-
-var Objects = [];
-
-var literals = [];
-
-var code = undefined;
 
 function ObjectObject() {
 
@@ -135,7 +136,7 @@ function JSVar(type, index) {
  * @returns
  */
 function TOS() {
-  return stack[stack.length - 1];
+  return Stack[Stack.length - 1];
 }
 
 /**
@@ -144,14 +145,14 @@ function TOS() {
  * @returns
  */
 function NOS() {
-  return stack[stack.length - 2];
+  return Stack[Stack.length - 2];
 }
 
 /**
  * The 3rd cell on stack
  */
 function ThirdOS() {
-  return stack[stack.length - 3];
+  return Stack[Stack.length - 3];
 }
 
 /**
@@ -166,7 +167,7 @@ function assert_no_leak() {
   }
   // check display
   // check stack
-  if (stack.length > 0) {
+  if (Stack.length > 0) {
     console.log("mem leak @ stack.")
   }
 }
@@ -335,7 +336,7 @@ function freevars() {
   if (FP === 0)
     throw "main function has no freevars";
 
-  var v = stack[FP - 1]; // jsvar for Function Object
+  var v = Stack[FP - 1]; // jsvar for Function Object
   v = Objects[v.index]; // function object
   return v.freevars;
 }
@@ -366,7 +367,7 @@ function ARGC() {
   if (FP === 0)
     throw "main function has no args";
 
-  var v = stack[FP - 3];
+  var v = Stack[FP - 3];
 
   assert_var_object_number(v);
 
@@ -401,7 +402,7 @@ function pid2sid(pid) {
  */
 function push(v) {
 
-  stack.push(v);
+  Stack.push(v);
 
   if (v.type === VT_OBJ) {
     Objects[v.index].ref++;
@@ -416,7 +417,7 @@ function push(v) {
  */
 function pop() {
 
-  var v = stack.pop();
+  var v = Stack.pop();
 
   if (v.type === VT_OBJ) {
     object_ref_decr(v.index);
@@ -434,11 +435,11 @@ function pop() {
  */
 function swap() {
   var n1, n2;
-  n1 = stack.pop();
-  n2 = stack.pop();
+  n1 = Stack.pop();
+  n2 = Stack.pop();
 
-  stack.push(n1);
-  stack.push(n2);
+  Stack.push(n1);
+  Stack.push(n2);
 }
 
 /**
@@ -452,14 +453,14 @@ function set_to_local(addr, objvar) {
   assert_var_addr_local(addr);
   assert_var_object(objvar);
 
-  var v = stack[lid2sid(addr.index)];
+  var v = Stack[lid2sid(addr.index)];
   if (v.type === VT_LNK) {
     object_ref_decr(Links[v.index].object);
     Links[v.index].object = objvar.index;
     object_ref_incr(objvar.index);
   } else if (v.type === VT_OBJ) {
     object_ref_decr(v.index);
-    stack[lid2sid(addr.index)] = objvar;
+    Stack[lid2sid(addr.index)] = objvar;
     object_ref_incr(objvar.index);
   } else
     throw "unrecognized var type in local slot";
@@ -476,14 +477,14 @@ function set_to_param(addr, objvar) {
   assert_var_addr_param(addr);
   assert_var_object(objvar);
 
-  var v = stack[pid2sid(addr.index)];
+  var v = Stack[pid2sid(addr.index)];
   if (v.type === VT_LNK) {
     object_ref_decr(Links[v.index].object);
     Links[v.index].object = objvar.index;
     object_ref_incr(objvar.index);
   } else if (v.type === VT_OBJ) {
     object_ref_decr(v.index);
-    stack[pid2sid(addr.index)] = objvar;
+    Stack[pid2sid(addr.index)] = objvar;
     object_ref_incr(objvar.index);
   } else
     throw "unrecognized var type in param slot";
@@ -588,12 +589,12 @@ function assign() {
 }
 
 function printstack() {
-  if (stack.length === 0) {
+  if (Stack.length === 0) {
     console.log("STACK Empty");
   } else {
-    console.log("STACK size: " + stack.length);
-    for (var i = stack.length - 1; i >= 0; i--) {
-      var v = stack[i];
+    console.log("STACK size: " + Stack.length);
+    for (var i = Stack.length - 1; i >= 0; i--) {
+      var v = Stack[i];
       if (v.type == VT_OBJ) {
         var index = v.index;
         var obj = Objects[index];
@@ -633,7 +634,7 @@ function printfreevar() {
   if (FP === 0)
     return;
 
-  var v = stack[FP - 1];
+  var v = Stack[FP - 1];
 
   if (v.type !== VT_OBJ || Objects[v.index].type !== "function")
     throw "error, function object not found!";
@@ -675,29 +676,28 @@ function step(code, bytecode) {
 
   switch (bytecode.op) {
 
-
   case "CALL":
     v = TOS();
-    pc_stack.push(PC);
-    fp_stack.push(FP);
+    PCStack.push(PC);
+    FPStack.push(FP);
     PC = Objects[v.index].value;
-    FP = stack.length;
+    FP = Stack.length;
     break;
 
   case "CAPTURE":
     var f = Objects[TOS().index];
     if (bytecode.arg1 === "parameters" || bytecode.arg1 === "locals") {
       if (bytecode.arg1 === "parameters") {
-        v = stack[pid2sid(bytecode.arg2)];
+        v = Stack[pid2sid(bytecode.arg2)];
       } else {
-        v = stack[lid2sid(bytecode.arg2)];
+        v = Stack[lid2sid(bytecode.arg2)];
       }
 
       if (v.type === VT_LNK) {
         f.freevars.push(new JSVar(VT_LNK, v.index));
         Links[v.index].ref++;
       } else if (v.type === VT_OBJ) {
-        id = alloc_display();
+        id = alloc_link();
 
         Links[id] = {
           ref : 2, // we create 2 links to it
@@ -723,16 +723,16 @@ function step(code, bytecode) {
     break;
 
   case "FETCH": // addr -- n1 or O1, prop1 -- O2
-    var addr = stack.pop();
+    var addr = Stack.pop();
     if (addr.type === VT_LOC) {
-      v = stack[lid2sid(addr.index)];
+      v = Stack[lid2sid(addr.index)];
       if (v.type === VT_OBJ) {
       } else if (v.type === VT_LNK) {
         v = new JSVar(VT_OBJ, Links[v.index].object);
       } else
         throw "Unsupported var type in local slot";
     } else if (addr.type === VT_ARG) {
-      v = stack[pid2sid(addr.index)];
+      v = Stack[pid2sid(addr.index)];
       if (v.type === VT_OBJ) {
       } else if (v.type === VT_LNK) {
         v = new JSVar(VT_OBJ, Links[v.index].object);
@@ -782,16 +782,16 @@ function step(code, bytecode) {
     // push an address, may be local, param, or closed
     if (bytecode.arg1 === "LOCAL") {
       v = new JSVar(VT_LOC, bytecode.arg2);
-      stack.push(v);
+      Stack.push(v);
     } else if (bytecode.arg1 === 'PARAM') {
       v = new JSVar(VT_ARG, bytecode.arg2);
-      stack.push(v);
+      Stack.push(v);
     } else if (bytecode.arg1 === 'FRVAR') {
       v = new JSVar(VT_FRV, bytecode.arg2);
-      stack.push(v);
+      Stack.push(v);
     } else if (bytecode.arg1 === "PROP") {
       v = new JSVar(VT_PRO, bytecode.arg2);
-      stack.push(v);
+      Stack.push(v);
     } else
       throw "not supported yet";
 
@@ -799,7 +799,6 @@ function step(code, bytecode) {
 
   case "LITC":
     // push an constant value
-    // create new value object and push to stack
     val = bytecode.arg1;
     obj = Objects.push(new ValueObject(val)) - 1;
     v = new JSVar(VT_OBJ, obj);
@@ -809,7 +808,7 @@ function step(code, bytecode) {
   case "LITN":
     // push n UNDEFINED object
     for (var i = 0; i < bytecode.arg1; i++) {
-      stack.push(new JSVar(VT_OBJ, 0));
+      Stack.push(new JSVar(VT_OBJ, 0));
     }
     break;
 
@@ -822,13 +821,13 @@ function step(code, bytecode) {
 
   case "RBTEST":
     if (rb_tester !== undefined) {
-      rb_tester[bytecode.arg1](this);
+      rb_tester[bytecode.arg1](hulahula);
     }
     break;
 
   case "RET":
     if (FP === 0) { // main()
-      while (stack.length) {
+      while (Stack.length) {
         pop();
       }
       PC = code.length; // exit
@@ -839,10 +838,10 @@ function step(code, bytecode) {
       var argc = ARGC();
 
       if (bytecode.arg1 === "RESULT") {
-        result = stack.pop();
+        result = Stack.pop();
       }
 
-      while (stack.length > FP) {
+      while (Stack.length > FP) {
         pop();
       }
 
@@ -854,13 +853,13 @@ function step(code, bytecode) {
       }
 
       // restore fp and pc
-      PC = pc_stack.pop();
-      FP = fp_stack.pop();
+      PC = PCStack.pop();
+      FP = FPStack.pop();
 
       if (result === undefined) { // no return value provided
-        stack.push(new JSVar(VT_OBJ, 0));
+        Stack.push(new JSVar(VT_OBJ, 0));
       } else {
-        stack.push(result);
+        Stack.push(result);
       }
     }
     break;
@@ -871,9 +870,9 @@ function step(code, bytecode) {
 
   case "VAL":
     v = new JSVar(VT_VAL, bytecode.arg1);
-    stack.push(v);
+    Stack.push(v);
     break;
-    
+
   case "+":
     // assert, only number supported up to now
     assert_var_object_number(TOS());
@@ -887,13 +886,12 @@ function step(code, bytecode) {
     pop();
 
     // create new value object
-    // TODO using alloc
     obj = Objects.push(new ValueObject(v)) - 1;
 
     // push result on stack
     push(new JSVar(VT_OBJ, obj));
-    break;    
-    
+    break;
+
   case "*":
     // assert, only number supported up to now
     assert_var_object_number(TOS());
@@ -912,7 +910,7 @@ function step(code, bytecode) {
 
     // push result on stack
     push(new JSVar(VT_OBJ, obj));
-    break;    
+    break;
 
   case '=':
     assign();
@@ -969,7 +967,6 @@ function run(input, tester) {
 
     // like the real
     PC++;
-
     step(code, bytecode);
   }
 
@@ -978,6 +975,6 @@ function run(input, tester) {
   assert_no_leak();
 }
 
-
-
-exports.run = run;
+module.exports = {
+  run : run,
+}

@@ -23,9 +23,8 @@ var test_group_001 = [
       name : "one_line_literal", // 0
       text : '1000; rb_test("hello");',
       test : {
-        hello : function(vm) {
-          
-          console.log(vm.PC);
+        hello : function(h) {
+          h.talk();
         }
       }
     },
