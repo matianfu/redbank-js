@@ -4,16 +4,6 @@
  * 
  ******************************************************************************/
 
-var rb_tester;
-
-var hulahula = {
-  code : "hello",
-  text : "world",
-  talk : function() {
-    console.log(this.code + " " + this.text);
-  }
-}
-
 /**
  * var type constant
  * 
@@ -23,6 +13,10 @@ var hulahula = {
  * VT_LNK is the link to object id, it may be placed on params and locals. temps
  * may not be VT_LINK, freevars must be VT_LNK
  */
+var Format = require('./redbank_format.js');
+
+var HORIZONTAL_LINE = "=================================================";
+
 var VT_OBJ = "Object";
 var VT_LNK = "ObjectLink";
 
@@ -31,80 +25,77 @@ var VT_LOC = "Local";
 var VT_ARG = "Argument";
 var VT_PRO = "Property";
 
-var VT_VAL = "Value";
-
 var VT_LIT = "Literal";
-var VT_NIL = "Null";
 
-/**
- * globals
- */
-var PC = 0;
-var FP = 0;
+function RedbankVM() {
 
-var PCStack = [];
-var FPStack = [];
+  this.PC = 0;
+  this.FP = 0;
 
-var Stack = [];
-var Objects = [];
-var Links = [];
+  this.PCStack = [];
+  this.FPStack = [];
 
-var code = undefined;
+  this.Stack = [];
+  this.Objects = [];
+  this.Links = [];
 
-function alloc_link() {
+  this.code = undefined;
+  this.testcase = undefined;
+}
 
-  for (var i = 0; i < Links.length; i++) {
-    if (Links[i] === undefined)
+RedbankVM.prototype.alloc_link = function() {
+
+  for (var i = 0; i < this.Links.length; i++) {
+    if (this.Links[i] === undefined)
       return i;
   }
 
-  return Links.length;
+  return this.Links.length;
 }
 
-function ObjectObject() {
+function ObjectObject(vm) {
 
-  function find_property(name) {
-    for (var i = 0; i < this.properties.length; i++) {
-      if (this.properties[i].name === name)
-        return i;
-    }
-  }
-
-  function set_property(name, object_index) {
-    var i = this.find_property(name);
-    if (i === undefined) {
-      this.properties.push({
-        name : name,
-        index : object_index
-      });
-
-      object_ref_incr(object_index);
-    } else {
-      var old = this.properties[i].index;
-      this.properties[i].index = object_index;
-
-      object_ref_incr(object_index);
-      object_ref_decr(old);
-    }
-  }
-
-  function get_property(name) {
-
-  }
-
+  this.vm = vm;
   this.isPrimitive = false;
   this.type = "object";
   this.properties = [];
   this.ref = 0;
-  this.find_property = find_property;
-  this.set_property = set_property;
-  this.get_property = get_property;
 }
+
+ObjectObject.prototype.find_prop = function(name) {
+  for (var i = 0; i < this.properties.length; i++) {
+    if (this.properties[i].name === name)
+      return i;
+  }
+};
+
+ObjectObject.prototype.set_property = function(name, object_index) {
+  var i = this.find_prop(name);
+  if (i === undefined) {
+    this.properties.push({
+      name : name,
+      index : object_index
+    });
+
+    this.vm.object_ref_incr(object_index);
+  } else {
+    var old = this.properties[i].index;
+    this.properties[i].index = object_index;
+    this.vm.object_ref_incr(object_index);
+    this.vm.object_ref_decr(old);
+  }
+};
+
+// TODO
+ObjectObject.prototype.get_property = function get_property(name) {
+
+};
 
 /**
  * constructor for value object (except function)
  */
-function ValueObject(value) {
+function ValueObject(vm, value) {
+  this.vm = vm;
   this.isPrimitive = true;
   this.type = typeof value;
   this.value = value;
@@ -114,7 +105,8 @@ function ValueObject(value) {
 /**
  * constructor for function object
  */
-function FuncObject(value) {
+function FuncObject(vm, value) {
+  this.vm = vm;
   this.isPrimitive = true;
   this.type = "function";
   this.value = value; // value is the jump position
@@ -135,8 +127,8 @@ function JSVar(type, index) {
  * 
  * @returns
  */
-function TOS() {
-  return Stack[Stack.length - 1];
+RedbankVM.prototype.TOS = function() {
+  return this.Stack[this.Stack.length - 1];
 }
 
 /**
@@ -144,35 +136,35 @@ function TOS() {
  * 
  * @returns
  */
-function NOS() {
-  return Stack[Stack.length - 2];
+RedbankVM.prototype.NOS = function() {
+  return this.Stack[this.Stack.length - 2];
 }
 
 /**
  * The 3rd cell on stack
  */
-function ThirdOS() {
-  return Stack[Stack.length - 3];
+RedbankVM.prototype.ThirdOS = function() {
+  return this.Stack[this.Stack.length - 3];
 }
 
 /**
  * 
  */
-function assert_no_leak() {
+RedbankVM.prototype.assert_no_leak = function() {
   // check objects
-  for (var i = 1; i < Objects.length; i++) {
-    if (Objects[i] !== undefined) {
+  for (var i = 1; i < this.Objects.length; i++) {
+    if (this.Objects[i] !== undefined) {
       console.log("mem leak @ object id: " + i);
     }
   }
   // check display
   // check stack
-  if (Stack.length > 0) {
+  if (this.Stack.length > 0) {
     console.log("mem leak @ stack.")
   }
 }
 
-function assert_var_object(v) {
+RedbankVM.prototype.assert_var_object = function(v) {
   if (v.type !== VT_OBJ)
     throw "var is not an object, assert fail";
 }
@@ -182,37 +174,36 @@ function assert_var_object(v) {
  * 
  * @param v
  */
-function assert_var_object_number(v) {
+RedbankVM.prototype.assert_var_object_number = function(v) {
   if (v.type !== VT_OBJ)
     throw "var is not an object, assert fail";
 
-  if (Objects[v.index].type !== "number")
+  if (this.Objects[v.index].type !== "number")
     throw "var -> object is not an number, assert fail";
 }
 
-function assert_var_object_boolean(v) {
+RedbankVM.prototype.assert_var_object_boolean = function(v) {
   if (v.type !== VT_OBJ)
     throw "var is not an object, assert fail";
 
-  if (Objects[v.index].type !== "boolean")
+  if (this.Objects[v.index].type !== "boolean")
     throw "var -> object is not a boolean, assert fail";
 }
 
-function getval_var_object_boolean(v) {
+RedbankVM.prototype.getval_var_object_boolean = function(v) {
 
-  assert_var_object_boolean(v);
-
-  return Objects[v.index].value;
+  this.assert_var_object_boolean(v);
+  return this.Objects[v.index].value;
 }
 
-function assert_var_object_object(v) {
+RedbankVM.prototype.assert_var_object_object = function(v) {
   if (v.type !== VT_OBJ)
     throw "var is not an object, assert fail";
-  if (Objects[v.index].type !== "object")
+  if (this.Objects[v.index].type !== "object")
     throw "var -> object is not an object object assert fail";
 }
 
-function assert_var_addr(v) {
+RedbankVM.prototype.assert_var_addr = function(v) {
   if (v.type === VT_LOC || v.type === VT_ARG || v.type === VT_FRV
       || v.type === VT_PRO)
     return;
@@ -220,28 +211,28 @@ function assert_var_addr(v) {
     throw "var is not an address, assert fail";
 }
 
-function assert_var_addr_local(v) {
+RedbankVM.prototype.assert_var_addr_local = function(v) {
   if (v.type === VT_LOC)
     return;
   else
     throw "var is not an local address";
 }
 
-function assert_var_addr_param(v) {
+RedbankVM.prototype.assert_var_addr_param = function(v) {
   if (v.type === VT_ARG)
     return;
   else
     throw "var is not an param address";
 }
 
-function assert_var_addr_frvar(v) {
+RedbankVM.prototype.assert_var_addr_frvar = function(v) {
   if (v.type === VT_FRV)
     return;
   else
     throw "var is not an freevar address";
 }
 
-function assert_var_addr_prop(v) {
+RedbankVM.prototype.assert_var_addr_prop = function(v) {
   if (v.type === VT_PRO)
     return;
   else
@@ -264,11 +255,11 @@ function verify_vartype() {
 
 }
 
-function object_ref_incr(index) {
+RedbankVM.prototype.object_ref_incr = function(index) {
   if (index === 0)
     return;
 
-  Objects[index].ref++;
+  this.Objects[index].ref++;
 }
 
 /**
@@ -279,32 +270,32 @@ function object_ref_incr(index) {
  * 
  * @param index
  */
-function object_ref_decr(index) {
+RedbankVM.prototype.object_ref_decr = function(index) {
 
   if (index === 0)
     return;
-  Objects[index].ref--;
+  this.Objects[index].ref--;
 
-  if (Objects[index].ref === 0) {
+  if (this.Objects[index].ref === 0) {
 
-    var obj = Objects[index];
+    var obj = this.Objects[index];
 
     if (obj.type === "function") {
       for (var i = 0; i < obj.freevars.length; i++) {
-        link_ref_decr(obj.freevars[i].index);
+        this.link_ref_decr(obj.freevars[i].index);
       }
     } else if (obj.type === "object") {
       for (var i = 0; i < obj.properties.length; i++) {
-        object_ref_decr(obj.properties[i].index);
+        this.object_ref_decr(obj.properties[i].index);
       }
     }
 
-    Objects[index] = undefined;
+    this.Objects[index] = undefined;
   }
 }
 
-function link_ref_incr(index) {
-  Links[index].ref++;
+RedbankVM.prototype.link_ref_incr = function(index) {
+  this.Links[index].ref++;
 }
 
 /**
@@ -316,13 +307,13 @@ function link_ref_incr(index) {
  * @param index
  *          link index
  */
-function link_ref_decr(index) {
+RedbankVM.prototype.link_ref_decr = function(index) {
 
-  Links[index].ref--;
+  this.Links[index].ref--;
 
-  if (Links[index].ref === 0) {
-    object_ref_decr(Links[index].object);
-    Links[index] = undefined;
+  if (this.Links[index].ref === 0) {
+    this.object_ref_decr(this.Links[index].object);
+    this.Links[index] = undefined;
   }
 }
 
@@ -331,13 +322,13 @@ function link_ref_decr(index) {
  * 
  * @returns
  */
-function freevars() {
+RedbankVM.prototype.freevars = function() {
 
-  if (FP === 0)
+  if (this.FP === 0)
     throw "main function has no freevars";
 
-  var v = Stack[FP - 1]; // jsvar for Function Object
-  v = Objects[v.index]; // function object
+  var v = this.Stack[this.FP - 1]; // jsvar for Function Object
+  v = this.Objects[v.index]; // function object
   return v.freevars;
 }
 
@@ -352,8 +343,8 @@ function check_reference_chain() {
  *          local index (relative to fp)
  * @returns absolute stack index
  */
-function lid2sid(lid) {
-  return FP + lid;
+RedbankVM.prototype.lid2sid = function(lid) {
+  return this.FP + lid;
 }
 
 /**
@@ -362,16 +353,16 @@ function lid2sid(lid) {
  * 
  * @returns argument count
  */
-function ARGC() {
+RedbankVM.prototype.ARGC = function() {
 
-  if (FP === 0)
+  if (this.FP === 0)
     throw "main function has no args";
 
-  var v = Stack[FP - 3];
+  var v = this.Stack[this.FP - 3];
 
-  assert_var_object_number(v);
+  this.assert_var_object_number(v);
 
-  return Objects[v.index].value;
+  return this.Objects[v.index].value;
 }
 
 /**
@@ -381,15 +372,8 @@ function ARGC() {
  *          parameter index (relative to parameter[0], calculated from fp)
  * @returns
  */
-function pid2sid(pid) {
-
-  // var v = stack[FP - 3];
-  //  
-  // assert_var_object_number(v);
-  //  
-  // // var argc = stack[FP - 3].index;
-  // var argc = Objects[v.index].value;
-  return FP - 3 - ARGC() + pid;
+RedbankVM.prototype.pid2sid = function(pid) {
+  return this.FP - 3 - this.ARGC() + pid;
 }
 
 /**
@@ -400,14 +384,14 @@ function pid2sid(pid) {
  * @param v
  *          JSVar to push on stack
  */
-function push(v) {
+RedbankVM.prototype.push = function(v) {
 
-  Stack.push(v);
+  this.Stack.push(v);
 
   if (v.type === VT_OBJ) {
-    Objects[v.index].ref++;
+    this.Objects[v.index].ref++;
   } else if (v.type === VT_LNK) { // pushing parameters
-    Links[v.index].ref++;
+    this.Links[v.index].ref++;
   }
 }
 
@@ -415,14 +399,14 @@ function push(v) {
  * 
  * @returns
  */
-function pop() {
+RedbankVM.prototype.pop = function() {
 
-  var v = Stack.pop();
+  var v = this.Stack.pop();
 
   if (v.type === VT_OBJ) {
-    object_ref_decr(v.index);
+    this.object_ref_decr(v.index);
   } else if (v.type === VT_LNK) {
-    link_ref_decr(v.index);
+    this.link_ref_decr(v.index);
   }
 
   return v;
@@ -433,13 +417,13 @@ function pop() {
  * 
  * FORTH: N1, N1 -- N2, N1
  */
-function swap() {
+RedbankVM.prototype.swap = function() {
   var n1, n2;
-  n1 = Stack.pop();
-  n2 = Stack.pop();
+  n1 = this.Stack.pop();
+  n2 = this.Stack.pop();
 
-  Stack.push(n1);
-  Stack.push(n2);
+  this.Stack.push(n1);
+  this.Stack.push(n2);
 }
 
 /**
@@ -448,20 +432,20 @@ function swap() {
  * @param addr
  * @param objvar
  */
-function set_to_local(addr, objvar) {
+RedbankVM.prototype.set_to_local = function(addr, objvar) {
 
-  assert_var_addr_local(addr);
-  assert_var_object(objvar);
+  this.assert_var_addr_local(addr);
+  this.assert_var_object(objvar);
 
-  var v = Stack[lid2sid(addr.index)];
+  var v = this.Stack[this.lid2sid(addr.index)];
   if (v.type === VT_LNK) {
-    object_ref_decr(Links[v.index].object);
-    Links[v.index].object = objvar.index;
-    object_ref_incr(objvar.index);
+    this.object_ref_decr(this.Links[v.index].object);
+    this.Links[v.index].object = objvar.index;
+    this.object_ref_incr(objvar.index);
   } else if (v.type === VT_OBJ) {
-    object_ref_decr(v.index);
-    Stack[lid2sid(addr.index)] = objvar;
-    object_ref_incr(objvar.index);
+    this.object_ref_decr(v.index);
+    this.Stack[this.lid2sid(addr.index)] = objvar;
+    this.object_ref_incr(objvar.index);
   } else
     throw "unrecognized var type in local slot";
 }
@@ -472,20 +456,20 @@ function set_to_local(addr, objvar) {
  * @param addr
  * @param objvar
  */
-function set_to_param(addr, objvar) {
+RedbankVM.prototype.set_to_param = function(addr, objvar) {
 
-  assert_var_addr_param(addr);
-  assert_var_object(objvar);
+  this.assert_var_addr_param(addr);
+  this.assert_var_object(objvar);
 
-  var v = Stack[pid2sid(addr.index)];
+  var v = this.Stack[this.pid2sid(addr.index)];
   if (v.type === VT_LNK) {
-    object_ref_decr(Links[v.index].object);
-    Links[v.index].object = objvar.index;
-    object_ref_incr(objvar.index);
+    this.object_ref_decr(this.Links[v.index].object);
+    this.Links[v.index].object = objvar.index;
+    this.object_ref_incr(objvar.index);
   } else if (v.type === VT_OBJ) {
-    object_ref_decr(v.index);
-    Stack[pid2sid(addr.index)] = objvar;
-    object_ref_incr(objvar.index);
+    this.object_ref_decr(v.index);
+    this.Stack[pid2sid(addr.index)] = objvar;
+    this.object_ref_incr(objvar.index);
   } else
     throw "unrecognized var type in param slot";
 }
@@ -496,28 +480,29 @@ function set_to_param(addr, objvar) {
  * @param addr
  * @param objvar
  */
-function set_to_frvar(addr, objvar) {
+RedbankVM.prototype.set_to_frvar = function(addr, objvar) {
 
-  assert_var_addr_frvar(addr);
-  assert_var_object(objvar);
+  this.assert_var_addr_frvar(addr);
+  this.assert_var_object(objvar);
 
-  var v = freevars()[addr.index];
+  var v = this.freevars()[addr.index];
 
   if (v.type === VT_LNK) {
-    object_ref_decr(Links[v.index].object);
-    Links[v.index].object = objvar.index;
-    object_ref_incr(objvar.index);
+    this.object_ref_decr(this.Links[v.index].object);
+    this.Links[v.index].object = objvar.index;
+    this.object_ref_incr(objvar.index);
   } else
     throw "unrecognized var type in frvar slot";
 }
 
-function set_to_object_prop(dst_objvar, propvar, src_objvar) {
+RedbankVM.prototype.set_to_object_prop = function(dst_objvar, propvar,
+    src_objvar) {
 
-  assert_var_object_object(dst_objvar);
-  assert_var_addr_prop(propvar);
+  this.assert_var_object_object(dst_objvar);
+  this.assert_var_addr_prop(propvar);
 
   var dst_object_index = dst_objvar.index;
-  var dst_object = Objects[dst_object_index];
+  var dst_object = this.Objects[dst_object_index];
 
   dst_object.set_property(propvar.index, src_objvar.index);
 }
@@ -527,29 +512,29 @@ function set_to_object_prop(dst_objvar, propvar, src_objvar) {
  * 
  * FORTH: addr, N1 -- (! the sequence is different from that of FORTH)
  */
-function store() {
+RedbankVM.prototype.store = function() {
 
-  assert_var_object(TOS());
-  assert_var_addr(NOS());
+  this.assert_var_object(this.TOS());
+  this.assert_var_addr(this.NOS());
 
-  var addr = NOS();
+  var addr = this.NOS();
 
   if (addr.type === VT_LOC) { // store to local
-    set_to_local(NOS(), TOS());
-    pop();
-    pop();
+    this.set_to_local(this.NOS(), this.TOS());
+    this.pop();
+    this.pop();
 
   } else if (addr.type === VT_ARG) { // store to arg
 
-    set_to_param(NOS(), TOS());
-    pop();
-    pop();
+    this.set_to_param(this.NOS(), this.TOS());
+    this.pop();
+    this.pop();
 
   } else if (addr.type === VT_FRV) { // store to freevar
 
-    set_to_frvar(NOS(), TOS());
-    pop();
-    pop();
+    this.set_to_frvar(this.NOS(), this.TOS());
+    this.pop();
+    this.pop();
   } else
     throw "not supported address type for STORE";
 }
@@ -559,45 +544,45 @@ function store() {
  * 
  * FORTH: addr, N1 -- N1
  */
-function assign() {
+RedbankVM.prototype.assign = function() {
 
-  assert_var_object(TOS());
-  assert_var_addr(NOS());
+  this.assert_var_object(this.TOS());
+  this.assert_var_addr(this.NOS());
 
-  var addr = NOS();
+  var addr = this.NOS();
 
   if (addr.type === VT_LOC) {
-    set_to_local(NOS(), TOS());
-    swap();
-    pop();
+    this.set_to_local(this.NOS(), this.TOS());
+    this.swap();
+    this.pop();
   } else if (addr.type === VT_ARG) {
-    set_to_param(NOS(), TOS());
-    swap();
-    pop();
+    this.set_to_param(this.NOS(), this.TOS());
+    this.swap();
+    this.pop();
   } else if (addr.type === VT_FRV) {
-    set_to_frvar(NOS(), TOS());
-    swap();
-    pop();
+    this.set_to_frvar(this.NOS(), this.TOS());
+    this.swap();
+    this.pop();
   } else if (addr.type === VT_PRO) {
-    set_to_object_prop(ThirdOS(), NOS(), TOS());
-    swap();
-    pop();
-    swap();
-    pop();
+    this.set_to_object_prop(this.ThirdOS(), this.NOS(), this.TOS());
+    this.swap();
+    this.pop();
+    this.swap();
+    this.pop();
   } else
     throw "not supported yet";
 }
 
-function printstack() {
-  if (Stack.length === 0) {
+RedbankVM.prototype.printstack = function() {
+  if (this.Stack.length === 0) {
     console.log("STACK Empty");
   } else {
-    console.log("STACK size: " + Stack.length);
-    for (var i = Stack.length - 1; i >= 0; i--) {
-      var v = Stack[i];
+    console.log("STACK size: " + this.Stack.length);
+    for (var i = this.Stack.length - 1; i >= 0; i--) {
+      var v = this.Stack[i];
       if (v.type == VT_OBJ) {
         var index = v.index;
-        var obj = Objects[index];
+        var obj = this.Objects[index];
 
         if (obj.type === "object") {
           console.log(i + " : " + index + " (object) ref: " + obj.ref);
@@ -614,8 +599,8 @@ function printstack() {
 
       } else if (v.type === VT_LOC) {
         console.log(i + " : [addr] " + VT_LOC + " " + v.index);
-      } else if (v.type === VT_VAL) {
-        console.log(i + " : " + VT_VAL + " " + v.index);
+        // } else if (v.type === VT_VAL) {
+        // console.log(i + " : " + VT_VAL + " " + v.index);
       } else if (v.type === VT_ARG) {
         console.log(i + " : [addr] " + VT_ARG + " " + v.index);
       } else if (v.type === VT_FRV) {
@@ -629,17 +614,17 @@ function printstack() {
   }
 }
 
-function printfreevar() {
+RedbankVM.prototype.printfreevar = function() {
 
-  if (FP === 0)
+  if (this.FP === 0)
     return;
 
-  var v = Stack[FP - 1];
+  var v = this.Stack[this.FP - 1];
 
-  if (v.type !== VT_OBJ || Objects[v.index].type !== "function")
+  if (v.type !== VT_OBJ || this.Objects[v.index].type !== "function")
     throw "error, function object not found!";
 
-  v = Objects[v.index];
+  v = this.Objects[v.index];
 
   if (v.freevars.length === 0)
     return;
@@ -653,14 +638,14 @@ function printfreevar() {
       throw "error freevar type";
 
     console.log(i + " : " + "link id: " + f.index + ", ref: "
-        + Links[f.index].ref + ", obj: " + Links[f.index].object);
+        + this.Links[f.index].ref + ", obj: " + this.Links[f.index].object);
   }
 }
 
-function findLabel(code, label) {
+RedbankVM.prototype.findLabel = function(code, label) {
 
   for (var i = 0; i < code.length; i++) {
-    var bytecode = code[i];
+    var bytecode = this.code[i];
     if (bytecode.op === "LABEL" && bytecode.arg1 === label)
       return i;
   }
@@ -668,7 +653,7 @@ function findLabel(code, label) {
   throw "Label not found";
 }
 
-function step(code, bytecode) {
+RedbankVM.prototype.step = function(code, bytecode) {
   var v, obj;
   var id, index;
   var val;
@@ -677,29 +662,30 @@ function step(code, bytecode) {
   switch (bytecode.op) {
 
   case "CALL":
-    v = TOS();
-    PCStack.push(PC);
-    FPStack.push(FP);
-    PC = Objects[v.index].value;
-    FP = Stack.length;
+    v = this.TOS();
+    this.PCStack.push(this.PC);
+    this.FPStack.push(this.FP);
+    this.PC = this.Objects[v.index].value;
+    this.FP = this.Stack.length;
     break;
 
   case "CAPTURE":
-    var f = Objects[TOS().index];
+    var f = this.Objects[this.TOS().index];
     if (bytecode.arg1 === "parameters" || bytecode.arg1 === "locals") {
       if (bytecode.arg1 === "parameters") {
-        v = Stack[pid2sid(bytecode.arg2)];
+        v = this.Stack[this.pid2sid(bytecode.arg2)];
       } else {
-        v = Stack[lid2sid(bytecode.arg2)];
+        v = this.Stack[this.lid2sid(bytecode.arg2)];
       }
 
       if (v.type === VT_LNK) {
         f.freevars.push(new JSVar(VT_LNK, v.index));
-        Links[v.index].ref++;
-      } else if (v.type === VT_OBJ) {
-        id = alloc_link();
+        this.Links[v.index].ref++;
 
-        Links[id] = {
+      } else if (v.type === VT_OBJ) {
+        id = this.alloc_link();
+
+        this.Links[id] = {
           ref : 2, // we create 2 links to it
           object : v.index
         };
@@ -719,58 +705,68 @@ function step(code, bytecode) {
     break;
 
   case "DROP": // n1 --
-    pop();
+    this.pop();
     break;
 
   case "FETCH": // addr -- n1 or O1, prop1 -- O2
-    var addr = Stack.pop();
+    var addr = this.Stack.pop();
     if (addr.type === VT_LOC) {
-      v = Stack[lid2sid(addr.index)];
+      v = this.Stack[this.lid2sid(addr.index)];
       if (v.type === VT_OBJ) {
       } else if (v.type === VT_LNK) {
-        v = new JSVar(VT_OBJ, Links[v.index].object);
+        v = new JSVar(VT_OBJ, this.Links[v.index].object);
       } else
         throw "Unsupported var type in local slot";
     } else if (addr.type === VT_ARG) {
-      v = Stack[pid2sid(addr.index)];
+      v = this.Stack[this.pid2sid(addr.index)];
       if (v.type === VT_OBJ) {
       } else if (v.type === VT_LNK) {
-        v = new JSVar(VT_OBJ, Links[v.index].object);
+        v = new JSVar(VT_OBJ, this.Links[v.index].object);
       } else
         throw "Unsupported var type in param slot";
     } else if (addr.type === VT_FRV) {
-      v = freevars()[addr.index] // freevar
+      v = this.freevars()[addr.index] // freevar
       if (v.type === VT_LNK) {
-        v = new JSVar(VT_OBJ, Links[v.index].object);
+        v = new JSVar(VT_OBJ, this.Links[v.index].object);
       } else
         throw "Unsupported var type in frvar slot";
     } else if (addr.type === VT_PRO) {
 
+      var obj = this.Objects[this.TOS().index];
+      var propIndex = obj.find_prop(addr.index);
+      if (propIndex === undefined) {
+        v = new JSVar(VT_OBJ, 0);
+      } else {
+        v = new JSVar(VT_OBJ, obj.properties[propIndex].index);
+      }
+
+      this.pop(); // TODO be careful for pop first push second for the same object may be delete. 
+
     } else
       throw "not supported yet.";
-    push(v);
+    this.push(v);
     break;
 
   case "FUNC": // -- f1
     val = bytecode.arg1;
-    obj = Objects.push(new FuncObject(val)) - 1;
+    obj = this.Objects.push(new FuncObject(this, val)) - 1;
     v = new JSVar(VT_OBJ, obj);
-    push(v);
+    this.push(v);
     break;
 
   case "JUMP":
     v = bytecode.arg1;
-    v = findLabel(code, v);
-    PC = v;
+    v = this.findLabel(this.code, v);
+    this.PC = v;
     break;
 
   case "JUMPC":
-    v = getval_var_object_boolean(TOS());
-    pop();
+    v = this.getval_var_object_boolean(this.TOS());
+    this.pop();
     if (v) {
-      PC = findLabel(code, bytecode.arg1);
+      this.PC = this.findLabel(this.code, bytecode.arg1);
     } else {
-      PC = findLabel(code, bytecode.arg2);
+      this.PC = this.findLabel(this.code, bytecode.arg2);
     }
     break;
 
@@ -782,16 +778,16 @@ function step(code, bytecode) {
     // push an address, may be local, param, or closed
     if (bytecode.arg1 === "LOCAL") {
       v = new JSVar(VT_LOC, bytecode.arg2);
-      Stack.push(v);
+      this.Stack.push(v);
     } else if (bytecode.arg1 === 'PARAM') {
       v = new JSVar(VT_ARG, bytecode.arg2);
-      Stack.push(v);
+      this.Stack.push(v);
     } else if (bytecode.arg1 === 'FRVAR') {
       v = new JSVar(VT_FRV, bytecode.arg2);
-      Stack.push(v);
+      this.Stack.push(v);
     } else if (bytecode.arg1 === "PROP") {
       v = new JSVar(VT_PRO, bytecode.arg2);
-      Stack.push(v);
+      this.Stack.push(v);
     } else
       throw "not supported yet";
 
@@ -800,141 +796,156 @@ function step(code, bytecode) {
   case "LITC":
     // push an constant value
     val = bytecode.arg1;
-    obj = Objects.push(new ValueObject(val)) - 1;
+    obj = this.Objects.push(new ValueObject(this, val)) - 1;
     v = new JSVar(VT_OBJ, obj);
-    push(v);
+    this.push(v);
     break;
 
   case "LITN":
     // push n UNDEFINED object
     for (var i = 0; i < bytecode.arg1; i++) {
-      Stack.push(new JSVar(VT_OBJ, 0));
+      this.Stack.push(new JSVar(VT_OBJ, 0));
     }
     break;
 
   case "LITO":
     // create an object object and push to stack
-    obj = Objects.push(new ObjectObject()) - 1;
+    obj = this.Objects.push(new ObjectObject(this)) - 1;
     v = new JSVar(VT_OBJ, obj);
-    push(v);
+    this.push(v);
     break;
 
-  case "RBTEST":
-    if (rb_tester !== undefined) {
-      rb_tester[bytecode.arg1](hulahula);
+  case "TEST":
+    if (this.testcase !== undefined) {
+      if (!(bytecode.arg1 in this.testcase)) {
+        console.log(Format.dotline
+            + "WARNING :: testcase does not have function " + bytecode.arg1);
+      } else if (typeof this.testcase[bytecode.arg1] !== 'function') {
+        console.log(Format.dotline + "WARNING :: testcase's property "
+            + this.testcase[bytecode.arg1] + " is not a function");
+      } else {
+        console.log(Format.dotline + "[" + this.testcase.group + "] "
+            + this.testcase.name);
+        this.testcase[bytecode.arg1](this);
+        console.log(Format.dotline + "[PASS]");
+      }
+    } else {
+      console.log(Format.dotline + "WARNING :: testcase not found");
     }
     break;
 
   case "RET":
-    if (FP === 0) { // main()
-      while (Stack.length) {
-        pop();
+    if (this.FP === 0) { // main()
+      while (this.Stack.length) {
+        this.pop();
       }
-      PC = code.length; // exit
+      this.PC = this.code.length; // exit
 
     } else {
 
       var result = undefined;
-      var argc = ARGC();
+      var argc = this.ARGC();
 
       if (bytecode.arg1 === "RESULT") {
-        result = Stack.pop();
+        result = this.Stack.pop();
       }
 
-      while (Stack.length > FP) {
-        pop();
+      while (this.Stack.length > this.FP) {
+        this.pop();
       }
 
-      pop(); // pop function object
-      pop(); // pop this object
-      pop(); // argc
+      this.pop(); // pop function object
+      this.pop(); // pop this object
+      this.pop(); // argc
       for (i = 0; i < argc; i++) {
-        pop(); // pop params
+        this.pop(); // pop params
       }
 
       // restore fp and pc
-      PC = PCStack.pop();
-      FP = FPStack.pop();
+      this.PC = this.PCStack.pop();
+      this.FP = this.FPStack.pop();
 
       if (result === undefined) { // no return value provided
-        Stack.push(new JSVar(VT_OBJ, 0));
+        this.Stack.push(new JSVar(VT_OBJ, 0));
       } else {
-        Stack.push(result);
+        this.Stack.push(result);
       }
     }
     break;
 
   case "STORE": // addr n1 --
-    store();
+    this.store();
     break;
 
   case "VAL":
     v = new JSVar(VT_VAL, bytecode.arg1);
-    Stack.push(v);
+    this.Stack.push(v);
     break;
 
   case "+":
     // assert, only number supported up to now
-    assert_var_object_number(TOS());
-    assert_var_object_number(NOS());
+    this.assert_var_object_number(this.TOS());
+    this.assert_var_object_number(this.NOS());
 
     // do calculation
-    v = Objects[NOS().index].value + Objects[TOS().index].value;
+    v = this.Objects[this.NOS().index].value
+        + this.Objects[this.TOS().index].value;
 
     // pop operand
-    pop();
-    pop();
+    this.pop();
+    this.pop();
 
     // create new value object
-    obj = Objects.push(new ValueObject(v)) - 1;
+    obj = this.Objects.push(new ValueObject(this, v)) - 1;
 
     // push result on stack
-    push(new JSVar(VT_OBJ, obj));
+    this.push(new JSVar(VT_OBJ, obj));
     break;
 
   case "*":
     // assert, only number supported up to now
-    assert_var_object_number(TOS());
-    assert_var_object_number(NOS());
+    this.assert_var_object_number(this.TOS());
+    this.assert_var_object_number(this.NOS());
 
     // do calculation
-    v = Objects[NOS().index].value * Objects[TOS().index].value;
+    v = this.Objects[this.NOS().index].value
+        * this.Objects[this.TOS().index].value;
 
     // pop operand
-    pop();
-    pop();
+    this.pop();
+    this.pop();
 
     // create new value object
     // TODO using alloc
-    obj = Objects.push(new ValueObject(v)) - 1;
+    obj = this.Objects.push(new ValueObject(this, v)) - 1;
 
     // push result on stack
-    push(new JSVar(VT_OBJ, obj));
+    this.push(new JSVar(VT_OBJ, obj));
     break;
 
   case '=':
-    assign();
+    this.assign();
     break;
 
   case '===':
 
-    assert_var_object(TOS());
-    assert_var_object(NOS());
+    this.assert_var_object(this.TOS());
+    this.assert_var_object(this.NOS());
 
-    if (TOS().type === NOS().type
-        && Objects[TOS().index].type === Objects[NOS().index].type
-        && Objects[TOS().index].value === Objects[NOS().index].value) {
-      v = new ValueObject(true);
+    if (this.TOS().type === this.NOS().type
+        && this.Objects[this.TOS().index].type === this.Objects[this.NOS().index].type
+        && this.Objects[this.TOS().index].value === this.Objects[this.NOS().index].value) {
+      v = new ValueObject(this, true);
     } else {
-      v = new ValueObject(false);
+      v = new ValueObject(this, false);
     }
 
-    index = Objects.push(v) - 1;
+    index = this.Objects.push(v) - 1;
     v = new JSVar(VT_OBJ, index);
 
-    pop();
-    pop();
-    push(v);
+    this.pop();
+    this.pop();
+    this.push(v);
 
     break;
 
@@ -943,38 +954,39 @@ function step(code, bytecode) {
   }
 }
 
-function run(input, tester) {
+RedbankVM.prototype.run = function(input, testcase) {
 
-  code = input;
-  rb_tester = tester;
+  this.code = input;
+  this.testcase = testcase;
 
-  Objects[0] = new ValueObject(undefined);
-  Objects[0].ref = -1;
+  this.Objects[0] = new ValueObject(this, undefined);
+  this.Objects[0].ref = -1;
 
-  console.log("-------------------- start running ---------------------");
+  console.log(Format.hline);
+  console.log("[[Start Running ]]")
+  console.log(Format.hline);
 
-  while (PC < code.length) {
+  while (this.PC < this.code.length) {
 
-    var bytecode = code[PC];
+    var bytecode = this.code[this.PC];
 
-    printstack();
-    printfreevar();
-    console.log("==================================================");
-
-    console.log("PC : " + PC + ", FP : " + FP);
-    console.log("OPCODE: " + bytecode.op + ' ' + bytecode.arg1 + ' '
-        + bytecode.arg2 + ' ' + bytecode.arg3);
+    this.printstack();
+    this.printfreevar();
+    console.log(Format.hline);
+    console.log("PC : " + this.PC + ", FP : " + this.FP);
+    console.log("OPCODE: " + bytecode.op + ' '
+        + ((bytecode.arg1 === undefined) ? '' : bytecode.arg1) + ' '
+        + ((bytecode.arg2 === undefined) ? '' : bytecode.arg2) + ' '
+        + ((bytecode.arg3 === undefined) ? '' : bytecode.arg3));
 
     // like the real
-    PC++;
-    step(code, bytecode);
+    this.PC++;
+    this.step(this.code, bytecode);
   }
 
-  printstack();
-  printfreevar();
-  assert_no_leak();
+  this.printstack();
+  this.printfreevar();
+  this.assert_no_leak();
 }
 
-module.exports = {
-  run : run,
-}
+module.exports = RedbankVM;

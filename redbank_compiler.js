@@ -1,11 +1,13 @@
 'use strict';
 
+var Format = require('./redbank_format.js');
+
 var USE_RB_TEST = true;
 
 var estraverse = require('estraverse');
 var esutils = require('esutils');
 
-
+var silent = true;
 
 var AstCompiler = {};
 
@@ -96,15 +98,41 @@ function exprAsVal(expr) {
       return true;
     else
       throw "Unknown role for " + pt;
-  } else if(pt === "MemberExpression") {
+
+  } else if (pt === "MemberExpression") {
     if (expr === parent.object)
       return true;
     else if (expr === parent.property)
       return false;
     else
       throw "Unknown role for " + pt;
+
+  } else if (pt === "BinaryExpression") {
+    return true;
+
+  } else if (pt === "VariableDeclarator") {
+    if (expr === parent.id)
+      return false;
+    else if (expr === parent.init)
+      return true;
+    else
+      throw "error";
+
+    // interface CallExpression <: Expression {
+    // type: "CallExpression";
+    // callee: Expression;
+    // arguments: [ Expression ];
+    // }
+  } else if (pt === "CallExpression") {
+    return true; // TODO need check error
+  } else if (pt === "ReturnStatement") {
+    if (expr === parent.argument)
+      return true;
+    else
+      throw "error";
+
   } else
-    throw "not supported yet";
+    throw "exprAsVal: " + pt + " not supported yet";
 };
 
 /**
@@ -154,10 +182,10 @@ function indent_decr() {
 }
 
 function astlog(x) {
-  console.log(indent + x);
+  if (silent !== true) {
+    console.log(indent + x);
+  }
 }
-
-
 
 var lr_stack = [];
 
@@ -299,13 +327,15 @@ function build_function_tree(node) {
       return;
     }
 
-    function emit(instruction) {
+    function emitc(instruction) {
       this.code.push(instruction);
 
-      console.log('                                ..........' + instruction.op
-          + ' ' + ((instruction.arg1 === undefined) ? '' : instruction.arg1)
-          + ' ' + ((instruction.arg2 === undefined) ? '' : instruction.arg2)
-          + ' ' + ((instruction.arg3 === undefined) ? '' : instruction.arg3));
+      if (silent !== true) {
+        console.log(Format.dotline + instruction.op + ' '
+            + ((instruction.arg1 === undefined) ? '' : instruction.arg1) + ' '
+            + ((instruction.arg2 === undefined) ? '' : instruction.arg2) + ' '
+            + ((instruction.arg3 === undefined) ? '' : instruction.arg3));
+      }
     }
 
     if (astnode.type == "Program") {
@@ -318,7 +348,7 @@ function build_function_tree(node) {
         locals : [],
         freevars : [],
         code : [],
-        emit : emit,
+        emit : emitc,
       };
 
       // reverse annotation for debug
@@ -339,7 +369,7 @@ function build_function_tree(node) {
         locals : [],
         freevars : [],
         code : [],
-        emit : emitcode,
+        emit : emitc,
       };
 
       // reverse annotation for debug
@@ -480,15 +510,9 @@ function annotate(fnode) {
     } else if (astnode.type == 'FunctionExpression') {
       return; // Do not recurse into function.
     }
-    // var thisIterpreter = this;
+
     function recurse(child) {
-      // this test assures the node has the same constructor with the ast (acorn
-      // / esprima)
-      // but don't know it's reasoin
-      // if (child.constructor == thisIterpreter.ast.constructor) {
-      // thisIterpreter.populateScope_(child, scope);
       fill_locals(child);
-      // }
     }
 
     for ( var name in astnode) {
@@ -523,12 +547,12 @@ function annotate(fnode) {
     var name = undefined;
 
     if (astnode.type === "Identifier") {
-      
-      if (USE_RB_TEST === true && astnode.name === "rb_test" &&
-          astnode.__parent__.type === "CallExpression") {
+
+      if (USE_RB_TEST === true && astnode.name === "rb_test"
+          && astnode.__parent__.type === "CallExpression") {
         // bypass this identifier
-      }
-      else if (ast_stack.length > 0 && ast_stack[0].type === "MemberExpression"
+      } else if (ast_stack.length > 0
+          && ast_stack[0].type === "MemberExpression"
           && astnode === ast_stack[0].property) {
         // bypass property identifier but not object
       } else {
@@ -543,16 +567,16 @@ function annotate(fnode) {
     // white list policy
     if (name) {
       if (find_name_in_locals(name)) {
-        console.log('id: ' + name + ' found in locals');
+        // console.log('id: ' + name + ' found in locals');
       } else if (find_name_in_parameters(name)) {
-        console.log('id: ' + name + ' found in parameters');
+        // console.log('id: ' + name + ' found in parameters');
       } else if (find_name_in_freevars(name)) {
-        console.log('id: ' + name + ' found in freevars');
+        // console.log('id: ' + name + ' found in freevars');
       } else {
         fnode.freevars.push({
           name : name,
         });
-        console.log('id: ' + name + ' set as new freevar');
+        // console.log('id: ' + name + ' set as new freevar');
       }
     }
 
@@ -584,10 +608,10 @@ function annotate(fnode) {
   fill_locals(astnode.body);
   fill_ids(astnode.body);
 
-  console.log("fnode : " + fnode.uid);
-  console.log("  parameters: " + JSON.stringify(fnode.parameters));
-  console.log("  locals: " + JSON.stringify(fnode.locals));
-  console.log("  freevars: " + JSON.stringify(fnode.freevars));
+  // console.log("fnode : " + fnode.uid);
+  // console.log(" parameters: " + JSON.stringify(fnode.parameters));
+  // console.log(" locals: " + JSON.stringify(fnode.locals));
+  // console.log(" freevars: " + JSON.stringify(fnode.freevars));
 };
 
 function resolve_freevar(parent, freevar) {
@@ -631,26 +655,23 @@ function resolve_freevar(parent, freevar) {
   return resolve(parent.parent, parent.freevars[parent.freevars.length - 1]);
 }
 
-function prepare(astroot) {
-
-  console.log("----------- prepare ------------- begin");
-
-  // output ast
-  console.log(JSON.stringify(astroot, null, 2));
+function prepare(astroot, opt_logftree) {
 
   populate_parent(astroot);
 
   var fnroot = build_function_tree(astroot);
 
-  // output ftree after build
-  console.log(JSON.stringify(fnroot, function(key, value) {
-    if (key === "parent") { // suppress circular reference
-      return (value === undefined) ? undefined : value.uid;
-    } else if (key === "astnode") { // supress ast node
-      return undefined;
-    } else
-      return value;
-  }, 2));
+  if (opt_logftree === true) {
+    // output ftree after build
+    console.log(JSON.stringify(fnroot, function(key, value) {
+      if (key === "parent") { // suppress circular reference
+        return (value === undefined) ? undefined : value.uid;
+      } else if (key === "astnode") { // supress ast node
+        return undefined;
+      } else
+        return value;
+    }, 2));
+  }
 
   // annotate
   fnode_visit(fnroot, function(fn) {
@@ -673,11 +694,11 @@ function prepare(astroot) {
   // log resolved freevars
   fnode_visit(fnroot, function(fn) {
 
-    console.log(fn.uid + ' freevars : ' + fn.freevars.length);
+    // console.log(fn.uid + ' freevars : ' + fn.freevars.length);
     for (var i = 0; i < fn.freevars.length; i++) {
       var v = fn.freevars[i];
-      console.log('  name: ' + v.name + ', from: ' + v.from + ', slot: '
-          + v.slot);
+      // console.log(' name: ' + v.name + ', from: ' + v.from + ', slot: '
+      // + v.slot);
     }
   });
 
@@ -740,7 +761,7 @@ function compileAssignmentExpression(fn, ast) {
 }
 
 // dispatcher
-function compileAST(fn, ast) {
+function compileAST(fn, ast, silent) {
 
   var expect;
 
@@ -883,15 +904,14 @@ function compileBlockStatement(fn, ast) {
 function compileCallExpression(fn, ast) {
 
   assert_expecting_r();
-  
-  if (USE_RB_TEST && 
-      ast.callee.type === "Identifier" &&
-      ast.callee.name === "rb_test") {
-    
+
+  if (USE_RB_TEST && ast.callee.type === "Identifier"
+      && ast.callee.name === "rb_test") {
+
     if (ast.arguments.length !== 1 || ast.arguments[0].type !== "Literal")
       throw "Incorrect rb_test usage";
-    
-    emitcode(fn, "RBTEST", ast.arguments[0].value);
+
+    emitcode(fn, "TEST", ast.arguments[0].value);
     emitcode(fn, "LITN", 1);
     return;
   }
@@ -1044,7 +1064,7 @@ function compileIdentifier(fn, ast) {
       op : 'LITA',
       arg1 : 'PARAM',
       arg2 : index
-    })
+    });
   } else {
     index = find_name_in_locals(fn, ast.name);
     if (index !== undefined) {
@@ -1052,21 +1072,21 @@ function compileIdentifier(fn, ast) {
         op : 'LITA',
         arg1 : 'LOCAL',
         arg2 : index
-      })
+      });
     } else {
       index = find_name_in_freevars(fn, ast.name);
       if (index !== undefined) {
         fn.emit({
           op : 'LITA',
           arg1 : 'FRVAR',
-          arg2 : 'index'
-        })
+          arg2 : index
+        });
       } else
         throw "Identifier: " + ast.name + " not found";
     }
   }
 
-  if (exprAsVal(ast)) {    
+  if (exprAsVal(ast)) {
     emitcode(fn, "FETCH");
   }
 }
@@ -1199,13 +1219,19 @@ function compileVariableDeclaration(fn, ast) {
 
 }
 
-// interface VariableDeclarator <: Node {
-// type: "VariableDeclarator";
-// id: Pattern;
-// init: Expression | null;
-// }
+/**
+ * 
+ * @param fn
+ *          function node
+ * @param ast
+ *          ast node
+ */
 function compileVariableDeclarator(fn, ast) {
-
+  // interface VariableDeclarator <: Node {
+  // type: "VariableDeclarator";
+  // id: Pattern;
+  // init: Expression | null;
+  // }
   assert_expecting_nothing(); // supposed to be
 
   if (ast.init !== null) {
@@ -1244,9 +1270,11 @@ function compileVariableDeclarator(fn, ast) {
  * 
  * @param fn
  */
-function compileFN(fn) {
+function compileFN(fn, silent) {
 
-  console.log("compileFN : " + fn.uid);
+  if (silent === false) {
+    console.log("compileFN : " + fn.uid);
+  }
 
   fn.emit({
     op : "LITN",
@@ -1254,10 +1282,10 @@ function compileFN(fn) {
   });
 
   if (fn.astnode.type === "Program") {
-    compileAST(fn, fn.astnode);
+    compileAST(fn, fn.astnode, silent);
   } else if (fn.astnode.type === "FunctionDeclaration"
       || fn.astnode.type === "FunctionExpression") {
-    compileAST(fn, fn.astnode.body);
+    compileAST(fn, fn.astnode.body, silent);
   } else {
     throw "Unexpected fnode ast type";
   }
@@ -1270,7 +1298,7 @@ function compileFN(fn) {
   });
 }
 
-function compile(node) {
+function compile(node, silent) {
 
   var i;
   var fnroot = prepare(node);
