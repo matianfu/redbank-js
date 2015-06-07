@@ -239,6 +239,26 @@ RedbankVM.prototype.assert_var_addr_prop = function(v) {
     throw "var is not an property address";
 }
 
+/**
+ * for external auto test
+ */
+RedbankVM.prototype.assert = function(expr) {
+  if (!(expr))
+    throw "ASSERT FAIL";
+}
+
+RedbankVM.prototype.assertStackLengthEqual = function(len) {
+  
+  this.assert(this.Stack.length == len);
+}
+
+RedbankVM.prototype.assertStackSlotUndefined = function(slot) {
+  
+  this.assert(this.Stack.length > slot);
+  this.assert(this.Stack[slot].type === "Object");
+  this.assert(this.Stack[slot].index === 0);
+}
+
 function verify_vartype_parameter() {
 
 }
