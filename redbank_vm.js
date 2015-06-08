@@ -259,6 +259,16 @@ RedbankVM.prototype.assertStackSlotUndefined = function(slot) {
   this.assert(this.Stack[slot].index === 0);
 }
 
+RedbankVM.prototype.assertStackSlotNumberValue = function(slot, val) {
+  this.assert(this.Stack.length > slot);
+  this.assert(this.Stack[slot].type === "Object");
+
+  var objIndex = this.Stack[slot].index;
+
+  this.assert(this.Objects[objIndex].type === "number");
+  this.assert(this.Objects[objIndex].value === val);
+}
+
 function verify_vartype_parameter() {
 
 }

@@ -1,6 +1,8 @@
-/**
+/******************************************************************************
+ * 
  * Modules
- */
+ * 
+ ******************************************************************************/
 
 var JSInterpreter = require("./interpreter.js");
 var Esprima_Main = require("./esprima.js");
@@ -8,6 +10,8 @@ var ESCodegen_Main = require("./escodegen.js");
 var Compiler = require("./redbank_compiler.js");
 var RedbankVM = require("./redbank_vm.js");
 var Format = require("./redbank_format.js");
+var readline = require("readline");
+
 /**
  * constants
  */
@@ -43,6 +47,10 @@ var generate_source_with_escodegen = false;
 // var generated = ESCodegen_Main.generate(ast, undefined);
 // console.log(generated);
 // }
+/**
+ * This two nonsense function are used for breakpoint. In nodeeclipse, event hander
+ * or callbacks sometimes won't stop at breakpoint.
+ */
 function doNothing() {
 }
 
@@ -99,10 +107,10 @@ function assert_stack_slot_boolean_value(vm, index, val) {
   assert(vm.Stack.length > index);
   assert(vm.Stack[index].type === "Object");
 
-  var objIndex = vm.Stack[index].index;
+  var oi = vm.Stack[index].index;
 
-  assert(vm.Objects[objIndex].type === "boolean");
-  assert(vm.Objects[objIndex].value === val);
+  assert(vm.Objects[oi].type === "boolean");
+  assert(vm.Objects[oi].value === val);
 }
 
 /**
@@ -161,6 +169,10 @@ function assert_stack_slot_undefined(vm, index) {
   assert(objIndex === 0);
 };
 
+/**
+ * generate name and group property in each test case
+ * @param testsuite
+ */
 function generate_testcase_name(testsuite) {
   for ( var group in testsuite) {
     for ( var testcase in testsuite[group]) {
@@ -208,29 +220,9 @@ function run_case(testcase, opt_logast, opt_logsrc) {
   console.log(Format.blank);
 }
 
-function emit_bytecode_to_c(bytecodes) {
-
-  var length = bytecodes.length;
-  for (var i = 0; i < length; i++) {
-    var instruction = bytecodes[i];
-    console.log(instruction.op + ' '
-        + ((instruction.arg1 === undefined) ? '' : instruction.arg1) + ' '
-        + ((instruction.arg2 === undefined) ? '' : instruction.arg2) + ' '
-        + ((instruction.arg3 === undefined) ? '' : instruction.arg3));
-  }
-}
-
-function emit_bytecode_to_socket(sock, bytecodes) {
-  var length = bytecodes.length;
-  for (var i = 0; i < length; i++) {
-    var instruction = bytecodes[i];
-    sock.write(instruction.op + ' '
-        + ((instruction.arg1 === undefined) ? '' : instruction.arg1) + ' '
-        + ((instruction.arg2 === undefined) ? '' : instruction.arg2) + ' '
-        + ((instruction.arg3 === undefined) ? '' : instruction.arg3) + '\n');
-  }
-}
-
+/**
+ * convert bytecodes to line format
+ */
 function bytecode_to_string(bytecodes) {
   var string = new String();
   var length = bytecodes.length;
@@ -245,18 +237,11 @@ function bytecode_to_string(bytecodes) {
   return string;
 }
 
-function emit_case(testcase) {
-  var ast = Esprima_Main.parse(testcase.source);
-  var bytecodes = Compiler.compile(ast, false);
-  emit_bytecode_to_c(bytecodes);
-}
-
-function emit_case_to_socket(sock, testcase) {
-  var ast = Esprima_Main.parse(testcase.source);
-  var bytecodes = Compiler.compile(ast, false);
-  emit_bytecode_to_socket(sock, bytecodes);
-}
-
+/**
+ * parse, compile and generate bytecodes in line format
+ * @param testcase
+ * @returns {String}
+ */
 function compile_to_string(testcase) {
   var ast = Esprima_Main.parse(testcase.source);
   var bytecodes = Compiler.compile(ast, false);
@@ -282,6 +267,7 @@ function run_testsuite(testsuite) {
   console.log(Format.hline);
 }
 
+//TODO no need to loop
 function run_single_in_suite(testsuite, group_name, testcase_name) {
 
   generate_testcase_name(testsuite);
@@ -299,60 +285,45 @@ function run_single_in_suite(testsuite, group_name, testcase_name) {
   }
 }
 
-function emit_single_in_suite(testsuite, group_name, testcase_name) {
+/******************************************************************************
+ * 
+ * RemoteTest is the 'pseudo' vm for test cases. It merely generate
+ * test commands in line command format.
+ * 
+ ******************************************************************************/
 
-  generate_testcase_name(testsuite);
-
-  for ( var group in testsuite) {
-    if (group === group_name) {
-      for ( var testcase in testsuite[group]) {
-        if (testcase === testcase_name) {
-          emit_case(TESTS[group][testcase]);
-          break;
-        }
-      }
-      break;
-    }
-  }
-}
-
-function emit_single_in_suite_to_socket(sock, testsuite, group_name,
-    testcase_name) {
-
-  generate_testcase_name(testsuite);
-
-  for ( var group in testsuite) {
-    if (group === group_name) {
-      for ( var testcase in testsuite[group]) {
-        if (testcase === testcase_name) {
-          emit_case_to_socket(sock, TESTS[group][testcase]);
-          break;
-        }
-      }
-      break;
-    }
-  }
-}
-
+/**
+ * This is an string array holding test code.
+ * Each cell holds one test code string, without new line ending.
+ */
 function RemoteTest() {
   this.textArray = [];
   return this;
 }
 
+/**
+ * clear test codes.
+ */
 RemoteTest.prototype.reset = function() {
   this.textArray = [];
 }
 
+/**
+ * Merge all test codes into one string.
+ * Adding a new line ending to each test code, aka, one assert per line.
+ * Adding a blank line at end as EOF
+ * @returns {String}
+ */
 RemoteTest.prototype.toLines = function() {
-  
+
   var text = "";
-  
+
   for (var i = 0; i < this.textArray.length; i++) {
     text += this.textArray[i] + "\n";
   }
-  
+
   text += "\n";
-  
+
   return text;
 }
 
@@ -364,21 +335,19 @@ RemoteTest.prototype.assertStackSlotUndefined = function(slot) {
   this.textArray.push("StackSlotUndefined " + slot);
 }
 
-RemoteTest.prototype.expectStackSize = function(size) {
-  this.text += "StackSize " + size + "\n";
-}
-
-RemoteTest.prototype.expectStackSlotUndefined = function(slot) {
-  this.text += "StackSlotUndefined " + slot + "\n";
-}
-
-RemoteTest.prototype.expectStackSlotNumberValue = function(slot, value) {
-  this.text += "StackSlotNumberValue " + slot + " " + value + "\n";
+RemoteTest.prototype.assertStackSlotNumberValue = function(slot, val) {
+  this.textArray.push("StackSlotNumberValue " + slot + " " + val);
 }
 
 RemoteTest.prototype.toString = function() {
   return this.text + '\n';
 }
+
+/******************************************************************************
+ * 
+ * Test Cases
+ * 
+ ******************************************************************************/
 
 var testcase_basic = {
 
@@ -398,98 +367,86 @@ var testcase_basic = {
       vm.assertStackSlotUndefined(0);
       vm.assertStackSlotUndefined(1);
     },
-    remote_test : function() {
-      var test = new RemoteTest();
-      test.expectStackSize(2);
-      test.expectStackSlotUndefined(0);
-      test.expectStackSlotUndefined(1);
-      return test.toString();
-    }
   },
 
   var_declare_init_literal : {
     source : 'var a = 1000; rb_test("test");',
     test : function(vm) {
-      assert_stack_slot_number_value(vm, 0, 1000);
+      vm.assertStackSlotNumberValue(0, 1000);
     },
-    remote_test : function() {
-      var test = new RemoteTest();
-      test.expectStackSlotNumberValue(0, 1000);
-      return test.toString();
-    }
   },
 
   var_declare_init_expr_add : {
     source : 'var a = 20 + 3; rb_test("test");',
     test : function(vm) {
-      assert_stack_slot_number_value(vm, 0, 23);
+      vm.assertStackSlotNumberValue(0, 23);
     }
   },
 
   var_declare_init_by_var : {
     source : 'var a = 10; var b = a; rb_test("test");',
     test : function(vm) {
-      assert_stack_slot_number_value(vm, 0, 10);
-      assert_stack_slot_number_value(vm, 1, 10);
+      vm.assertStackSlotNumberValue(0, 10);
+      vm.assertStackSlotNumberValue(1, 10);
     }
   },
 
   var_assign_literal : {
     source : 'var a; a = 27; rb_test("test");',
     test : function(vm) {
-      assert_stack_slot_number_value(vm, 0, 27);
+      vm.assertStackSlotNumberValue(0, 27);
     }
   },
 
   var_assign_literal_dual : {
     source : 'var a; var b; a = 1920; b = 11; rb_test("test");',
     test : function(vm) {
-      assert_stack_slot_number_value(vm, 0, 1920);
-      assert_stack_slot_number_value(vm, 1, 11);
+      vm.assertStackSlotNumberValue(0, 1920);
+      vm.assertStackSlotNumberValue(1, 11);
     }
   },
 
   var_assign_var : {
     source : 'var a = 192; var b = a; rb_test("test");',
     test : function(vm) {
-      assert_stack_slot_number_value(vm, 0, 192);
-      assert_stack_slot_number_value(vm, 1, 192);
+      vm.assertStackSlotNumberValue(0, 192);
+      vm.assertStackSlotNumberValue(1, 192);
     }
   },
 
   var_assign_var_add_literal : {
     source : 'var a = 10; var b = a + 3; rb_test("test");',
     test : function(vm) {
-      assert_stack_slot_number_value(vm, 0, 10);
-      assert_stack_slot_number_value(vm, 1, 13);
+      vm.assertStackSlotNumberValue(0, 10);
+      vm.assertStackSlotNumberValue(1, 13);
     }
   },
 
   var_assign_self_add_literal : {
     source : 'var a = 10; a = a + 37; rb_test("test");',
     test : function(vm) {
-      assert_stack_slot_number_value(vm, 0, 47);
+      vm.assertStackSlotNumberValue(0, 47);
     }
   },
 
   expr_literal_add : {
     source : 'var a = 32 + 3; rb_test("test");',
     test : function(vm) {
-      assert_stack_slot_number_value(vm, 0, 35);
+      vm.assertStackSlotNumberValue(0, 35);
     }
   },
 
   expr_literal_add_mul : {
     source : 'var a = 2 + 3 * 5; rb_test("test")',
     test : function(vm) {
-      assert_stack_slot_number_value(vm, 0, 17);
+      vm.assertStackSlotNumberValue(0, 17);
     }
   },
 
   expr_literal_complex_add_mul : {
     source : 'var a = ((2 + 3) * 5 + 5 * (7 + 2)) * 3; rb_test("test")',
     test : function(vm) {
-      assert_stack_slot_number_value(vm, 0, 210);
+      vm.assertStackSlotNumberValue(0, 210);
     }
   },
 };
@@ -658,64 +615,70 @@ var TESTS = {
 // run_testsuite(TESTS);
 // emit_single_in_suite(TESTS, "basic", "var_declare");
 
+function client_connect_callback(client, testcase) {
+
+  console.log('Connected');
+
+  // prepare readline interface
+  var i = readline.createInterface(client, client);
+
+  var testname = undefined;
+  var remote = new RemoteTest();
+
+  // register event handler
+  i.on('line', function(line) {
+
+    // TODO safe
+    var message = JSON.parse(line.toString());
+
+    if (message.command == "READY") {
+
+      console.log("READY");
+      console.log("> send bytecode")
+      var string = compile_to_string(testcase);
+      console.log(string);
+      client.write(string);
+      client.write("\n");
+
+    } else if (message.command == "TEST") {
+
+      testname = message.argument;
+
+      if (testname in testcase) {
+
+        console.log("TEST " + message.argument);
+        console.log("> send test case");
+
+        remote.reset();
+        testcase[testname](remote);
+        client.write(remote.toLines());
+
+      } else {
+
+        console.log("property not found in testcase : " + testname);
+        client.write("ABORT\n");
+        client.destroy();
+      }
+
+    } else if (message.command == "TESTFAIL") {
+
+      console.log("TESTFAIL : " + testname + " @ " + message.argument);
+      client.destroy();
+
+    } else if (message.command == "FINISH") {
+      console.log("Finish " + message.argument);
+      client.destroy(); // kill client
+    }
+  });
+}
+
 function emit_as_tcp_client(testcase) {
 
   var net = require('net');
-  var rl = require("readline");
-
   var client = new net.Socket();
+
   client.connect(7979, '127.0.0.1', function() {
-
-    console.log('Connected');
-
-    // prepare readline interface
-    var i = rl.createInterface(client, client);
-    var testname = undefined;
-    var remote = new RemoteTest();
-    
-    // register event handler
-    i.on('line', function(line) {
-
-      // NOT SAFE TODO
-      var message = JSON.parse(line.toString());
-      
-      if (message.command == "READY") {
-        console.log("READY");
-        console.log("> send bytecode")
-        var string = compile_to_string(testcase);
-        console.log(string);
-        client.write(string);
-        client.write("\n");
-      } else if (message.command == "TEST") {
-
-        testname = message.argument;
-
-        if (testname in testcase) {
-          
-          console.log("TEST " + message.argument);
-          console.log("> send test case");
-          
-          remote.reset();
-          testcase[testname](remote);
-          client.write(remote.toLines());
-
-        } else {
-          
-          console.log("property not found in testcase : " + testname);
-          client.write("ABORT\n");
-          client.destroy();
-        }
-
-      } else if (message.command == "TESTFAIL") {
-        
-        console.log("TESTFAIL : " + testname + " @ " + message.argument);
-        client.destroy();
-
-      } else if (message.command == "FINISH") {
-        console.log("Finish " + message.argument);
-        client.destroy(); // kill client
-      }
-    });
+    client_connect_callback(client, testcase);
   });
 
   client.on('close', function() {
@@ -724,4 +687,112 @@ function emit_as_tcp_client(testcase) {
 }
 
 run_testsuite(TESTS);
-emit_as_tcp_client(TESTS["basic"]["var_declare"]);
+
+// emit_as_tcp_client(TESTS["basic"]["var_declare_dual"]);
+
+function SocketTestRunner(suite, group, name) {
+
+  this.testcase = undefined;
+  this.testname = undefined;
+  this.remote = new RemoteTest();
+  this.client = undefined;
+  this.all = [];
+
+  if (group === undefined && name === undefined) {
+    for ( var i in suite) {
+      for ( var j in suite[i]) {
+        this.all.push(suite[i][i]);
+      }
+    }
+  } else if (name == undefined) {
+    for ( var i in suite[group]) {
+      this.all.push(suite[group][i]);
+    }
+  } else {
+    this.all.push(suite[group][name]);
+  }
+}
+
+SocketTestRunner.prototype.handleLine = function(line) {
+
+  var message = JSON.parse(line.toString());
+
+  if (message.command == "READY") {
+
+    console.log("READY");
+    
+    this.testcase = this.all.shift();
+    console.log(Format.hline);
+    console.log("Test Group: " + this.testcase.group + " Case: " + this.testcase.name);
+    
+    console.log("> send bytecode")
+    var string = compile_to_string(this.testcase);
+    console.log(string);
+    this.client.write(string);
+    this.client.write("\n");
+
+  } else if (message.command == "TEST") {
+
+    this.testname = message.argument;
+
+    if (this.testname in this.testcase) {
+
+      console.log("TEST " + message.argument);
+      console.log("> send test case");
+
+      this.remote.reset();
+      this.testcase[this.testname](this.remote);
+      this.client.write(this.remote.toLines());
+
+    } else {
+
+      console.log("property not found in testcase : " + testname);
+      this.client.write("ABORT\n");
+      this.client.destroy();
+    }
+
+  } else if (message.command == "TESTFAIL") {
+
+    console.log("TESTFAIL : " + testname + " @ " + message.argument);
+    this.client.destroy();
+
+  } else if (message.command == "FINISH") {
+
+    console.log("Finish " + message.argument);
+
+    if (this.all.length == 0) {
+      this.client.destroy(); // kill client
+    } else {
+      this.testcase = this.all.shift();
+    }
+  }
+}
+
+SocketTestRunner.prototype.startTcpClient = function() {
+
+  var net = require('net');
+  var client = new net.Socket();
+  var runner = this;
+
+  client.connect(7979, '127.0.0.1', function() {
+
+    console.log('Connected');
+
+    // prepare readline interface
+    var i = readline.createInterface(client, client);
+
+    // register event handler
+    i.on('line', function(line) {
+      runner.handleLine(line);
+    });
+  });
+
+  client.on('close', function() {
+    console.log('Connection closed');
+  });
+
+  this.client = client;
+}
+
+// var runner = new SocketTestRunner(TESTS, "basic");
+// runner.startTcpClient();
