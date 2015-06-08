@@ -187,82 +187,6 @@ function astlog(x) {
   }
 }
 
-var lr_stack = [];
-
-function expect_l(ast) {
-  lr_stack.unshift({
-    val : "left",
-    node : ast
-  });
-}
-
-function unexpect_l(ast) {
-
-  var lr = lr_stack.shift();
-
-  if (lr.val !== "left" || lr.node !== ast)
-    throw "unexpect left not match";
-}
-
-function expect_r(ast) {
-  lr_stack.unshift({
-    val : "right",
-    node : ast
-  })
-}
-
-function unexpect_r(ast) {
-
-  var lr = lr_stack.shift();
-  if (lr.val !== "right" || lr.node !== ast)
-    throw "unexpect right not match";
-}
-
-function expecting_l() {
-  if (lr_stack.length === 0)
-    return false;
-
-  if (lr_stack[0].val === "left")
-    return true;
-  return false;
-}
-
-function expecting_r() {
-  if (lr_stack.length === 0)
-    return false;
-
-  if (lr_stack[0].val === "right")
-    return true;
-  return false;
-}
-
-function assert_expecting_l() {
-  if (lr_stack.length === 0 || lr_stack[0].val !== "left")
-    throw "assert expecting left fail";
-}
-
-function assert_expecting_r() {
-  if (lr_stack.length === 0 || lr_stack[0].val !== "right")
-    throw "assert expecting right fail";
-
-}
-
-/**
- * expecting either l or r but not none.
- */
-function assert_expecting_anything() {
-  if (lr_stack.length === 0)
-    throw "assert expecting anything fail";
-}
-
-/**
- * expecting nothing, aka, statement
- */
-function assert_expecting_nothing() {
-  if (lr_stack.length !== 0)
-    throw "assert expect nothing fail";
-}
-
 /**
  * This function generate a __parent__ property in each ast node, pointing to
  * it's parent
@@ -745,16 +669,8 @@ function emitJUMPC(fn, t, f) {
 // }
 function compileAssignmentExpression(fn, ast) {
 
-  assert_expecting_r();
-
-  expect_l(ast);
   compileAST(fn, ast.left);
-  unexpect_l(ast);
-
-  expect_r(ast);
   compileAST(fn, ast.right);
-  unexpect_r(ast);
-
   fn.emit({
     op : '=',
   });
@@ -766,13 +682,6 @@ function compileAST(fn, ast, silent) {
   var expect;
 
   indent_incr();
-
-  if (lr_stack.length === 0)
-    expect = " expecting none";
-  else
-    expect = " expecting " + lr_stack[0].val;
-
-  astlog(ast.type + " { //" + expect);
 
   switch (ast.type) {
   case "AssignmentExpression":
@@ -851,12 +760,6 @@ function compileAST(fn, ast, silent) {
 // }
 function compileBinaryExpression(fn, ast) {
 
-  // this function returns r only
-  assert_expecting_r();
-
-  // this expression expect r operand
-  expect_r();
-
   compileAST(fn, ast.left);
   compileAST(fn, ast.right);
 
@@ -883,7 +786,6 @@ function compileBinaryExpression(fn, ast) {
     throw "unsupported binary operator";
   }
 
-  unexpect_r();
 }
 
 // interface BlockStatement <: Statement {
@@ -903,7 +805,7 @@ function compileBlockStatement(fn, ast) {
 // }
 function compileCallExpression(fn, ast) {
 
-  assert_expecting_r();
+
 
   if (USE_RB_TEST && ast.callee.type === "Identifier"
       && ast.callee.name === "rb_test") {
@@ -918,9 +820,7 @@ function compileCallExpression(fn, ast) {
 
   // put parameters
   for (var i = 0; i < ast.arguments.length; i++) {
-    expect_r(ast);
     compileAST(fn, ast.arguments[i]);
-    unexpect_r(ast);
   }
 
   // put argc
@@ -937,9 +837,7 @@ function compileCallExpression(fn, ast) {
   });
 
   // put callee, may evaluate to lvalue
-  expect_r(ast);
   compileAST(fn, ast.callee);
-  unexpect_r(ast);
 
   // do call
   fn.emit({
@@ -963,12 +861,10 @@ function compileConditionalExpression(fn, ast) {
 // }
 function compileExpressionStatement(fn, ast) {
 
-  expect_r(ast);
   compileAST(fn, ast.expression);
   fn.emit({
     op : "DROP",
   })
-  unexpect_r(ast);
 }
 
 // interface FunctionDeclaration <: Function, Declaration {
@@ -1045,7 +941,6 @@ function find_name_in_freevars(fn, name) {
 // }
 function compileIdentifier(fn, ast) {
 
-  assert_expecting_anything();
   var i;
 
   if (ast.__parent__.type === "MemberExpression") {
@@ -1099,8 +994,6 @@ function compileIdentifier(fn, ast) {
 // }
 function compileIfStatement(fn, ast) {
 
-  assert_expecting_nothing();
-
   var begin = newLabel();
   var after = newLabel();
   var t = newLabel();
@@ -1108,9 +1001,7 @@ function compileIfStatement(fn, ast) {
 
   emitLabel(fn, begin);
 
-  expect_r(ast);
   compileAST(fn, ast.test);
-  unexpect_r(ast);
 
   emitJUMPC(fn, t, f);
 
@@ -1132,9 +1023,6 @@ function compileIfStatement(fn, ast) {
 // value: string | boolean | null | number | RegExp;
 // }
 function compileLiteral(fn, ast) {
-
-  assert_expecting_r();
-
   fn.emit({
     op : "LITC",
     arg1 : ast.value
@@ -1153,9 +1041,6 @@ function compileMemberExpression(fn, ast) {
   compileAST(fn, ast.property);
 
   if (exprAsVal(ast)) {
-    // fn.emit({
-    // op : "FETCH",
-    // })
     emitcode(fn, "FETCH");
   }
 }
@@ -1173,13 +1058,9 @@ function compileObjectExpression(fn, ast) {
 // body: [ Statement ];
 // }
 function compileProgram(fn, ast) {
-
-  assert_expecting_nothing();
-
   for (var i = 0; i < ast.body.length; i++) {
     compileAST(fn, ast.body[i]);
   }
-
 }
 
 // interface ReturnStatement <: Statement {
@@ -1187,18 +1068,12 @@ function compileProgram(fn, ast) {
 // argument: Expression | null;
 // }
 function compileReturnStatement(fn, ast) {
-
-  assert_expecting_nothing();
-
   if (ast.argument == null) {
     fn.emit({
       op : "RET",
     });
   } else {
-    expect_r(ast);
     compileAST(fn, ast.argument);
-    unexpect_r(ast);
-
     fn.emit({
       op : "RET",
       arg1 : "RESULT"
@@ -1232,7 +1107,6 @@ function compileVariableDeclarator(fn, ast) {
   // id: Pattern;
   // init: Expression | null;
   // }
-  assert_expecting_nothing(); // supposed to be
 
   if (ast.init !== null) {
     var i;
@@ -1254,9 +1128,7 @@ function compileVariableDeclarator(fn, ast) {
       arg2 : i
     });
 
-    expect_r(ast);
     compileAST(fn, ast.init);
-    unexpect_r(ast);
 
     fn.emit({
       op : "STORE",
