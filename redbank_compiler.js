@@ -92,14 +92,18 @@ function exprAsVal(expr) {
   var pt = parent.type;
 
   if (pt === "AssignmentExpression") {
-    if (expr === parent.left)
+    if (expr === parent.left) {
       return false;
-    else if (expr === parent.right)
+    }
+    else if (expr === parent.right) {
       return true;
-    else
+    }
+    else {
       throw "Unknown role for " + pt;
+    }
 
-  } else if (pt === "MemberExpression") {
+  }
+  else if (pt === "MemberExpression") {
     if (expr === parent.object)
       return true;
     else if (expr === parent.property)
@@ -107,10 +111,12 @@ function exprAsVal(expr) {
     else
       throw "Unknown role for " + pt;
 
-  } else if (pt === "BinaryExpression") {
+  }
+  else if (pt === "BinaryExpression") {
     return true;
 
-  } else if (pt === "VariableDeclarator") {
+  }
+  else if (pt === "VariableDeclarator") {
     if (expr === parent.id)
       return false;
     else if (expr === parent.init)
@@ -123,15 +129,18 @@ function exprAsVal(expr) {
     // callee: Expression;
     // arguments: [ Expression ];
     // }
-  } else if (pt === "CallExpression") {
+  }
+  else if (pt === "CallExpression") {
     return true; // TODO need check error
-  } else if (pt === "ReturnStatement") {
+  }
+  else if (pt === "ReturnStatement") {
     if (expr === parent.argument)
       return true;
     else
       throw "error";
 
-  } else
+  }
+  else
     throw "exprAsVal: " + pt + " not supported yet";
 };
 
@@ -146,15 +155,17 @@ function exprAsVal(expr) {
  */
 function fnode_visit(fnode, pre, post) {
 
-  if (pre)
+  if (pre) {
     pre(fnode);
+  }
 
   for (var i = 0; i < fnode.children.length; i++) {
     fnode_visit(fnode.children[i], pre, post);
   }
 
-  if (post)
+  if (post) {
     post(fnode);
+  }
 }
 
 /**
@@ -208,7 +219,8 @@ function populate_parent(astroot) {
         for (var i = 0; i < child.length; i++) {
           visit(child[i], node, prop, i);
         }
-      } else {
+      }
+      else {
         visit(child, node, prop);
       }
     }
@@ -229,6 +241,9 @@ function emitcode(f, o, a1, a2, a3) {
   })
 };
 
+/**
+ * Identifier is the element in FunctionNode's identifiers array
+ */
 function Identifier(name, parent_type) {
   this.name = name;
   this.parent_type = parent_type;
@@ -236,6 +251,9 @@ function Identifier(name, parent_type) {
   this.prop_index = undefined;
 }
 
+/**
+ * Lexical is the element in FunctionNode's lexicals array
+ */
 function Lexical(name, from, slot) {
   this.name = name;
   this.from = from;
@@ -278,251 +296,34 @@ function FunctionNode(uid, astnode, parent) {
  * fill argument
  */
 FunctionNode.prototype.fillArguments = function() {
+  
+  var i;
 
   if (this.astnode.type === "Program") {
     // do nothing
-  } else if (this.astnode.type === "FunctionDeclaration") {
-    for (var i = 0; i < astnode.arguments.length; i++) {
+  }
+  else if (this.astnode.type === "FunctionDeclaration") {
+    for (i = 0; i < this.astnode.params.length; i++) {
       this.arguments.push({
         name : astnode.params[i].name,
       });
     }
-  } else if (this.astnode.type === "FunctionExpression") {
-    for (var i = 0; i < astnode.arguments.length; i++) {
+  }
+  else if (this.astnode.type === "FunctionExpression") {
+    for (i = 0; i < this.astnode.params.length; i++) {
       this.arguments.push({
-        name : astnode.params[i].name
+        name : this.astnode.params[i].name
       });
     }
-  } else {
+  }
+  else {
     throw "error";
   }
-}
-
-FunctionNode.prototype.findNameInArguments = function(name) {
-
-  if (this.arguments.length === 0)
-    return;
-
-  /**
-   * Searching in reverse order is important!
-   * 
-   * In javascript, something like this:
-   * 
-   * function(x, x, x) { ... }
-   * 
-   * is valid. The last one rules.
-   */
-  for (var i = this.arguments.length - 1; i >= 0; i--) {
-    if (this.arguments[i].name === name)
-      return i;
-  }
-
-  // return undefined
-}
-
-FunctionNode.prototype.findNameInLocals = function(name) {
-
-  if (this.localvars.length === 0)
-    return;
-
-  for (var i = 0; i < this.localvars.length; i++) {
-    if (this.localvars[i].name === name)
-      return i;
-  }
-}
-
-FunctionNode.prototype.fillLocals = function() {
-
-  if (this.argumentsFilled !== true || this.identifiersFilled !== true)
-    throw "error";
-
-  for (var i = 0; i < this.identifiers.length; i++) {
-
-    var id = this.identifiers[i];
-
-    if (id.parent_type == "VariableDeclarator"
-        || id.parent_type == "FunctionDeclaration") {
-
-      // bypass same name in arguments
-      if (this.findNameInArguments(id.name) !== undefined)
-        continue;
-
-      if (this.findNameInLocals(id.name) !== undefined)
-        continue;
-
-      this.localvars.push({
-        name : id.name
-      });
-    }
-  }
-}
-
-FunctionNode.prototype.findNameInLexicals = function(name) {
-
-  if (this.lexicals.length === 0)
-    return;
-
-  for (var i = 0; i < this.lexicals.length; i++) {
-    if (this.lexicals[i].name === name)
-      return i;
-  }
-}
-
-FunctionNode.prototype.findNameInUnresolved = function(name) {
-
-  if (this.unresolved.length === 0)
-    return;
-
-  for (var i = 0; i < this.unresolved.length; i++) {
-    if (this.unresolved[i].name === name)
-      return i;
-  }
-}
-
-FunctionNode.prototype.fillLexicals = function() {
-
-  for (var fnode = this.parent; fnode !== undefined; fnode = fnode.parent) {
-    if (fnode.lexicalsFilled !== true) {
-      throw "not all ancestors' lexicals filled.";
-    }
-  }
-
-  for (var i = 0; i < this.identifiers.length; i++) {
-
-    var id = this.identifiers[i];
-
-    // is Property's key
-    if ((id.parent_type === "Property" && id.prop_name === "key") ||
-    // is MemberExpression's property
-    (id.parent_type === "MemberExpression" && id.prop_name === "property") ||
-    // in arguments
-    this.findNameInArguments(id.name) !== undefined ||
-    // in locals
-    this.findNameInLocals(id.name) !== undefined ||
-    // in lexicals
-    this.findNameInLexicals(id.name) !== undefined ||
-    // failed to resolve previously
-    this.findNameInUnresolved(id.name) !== undefined)
-      continue;
-
-    var from, slot, stack = [];
-    for (var fnode = this; fnode.parent !== undefined; fnode = fnode.parent) {
-
-      if ((slot = fnode.parent.findNameInArguments(id.name)) !== undefined) {
-        from = "argument";
-      } else if ((slot = fnode.parent.findNameInLocals(id.name)) !== undefined) {
-        from = "local";
-      } else if ((slot = fnode.parent.findNameInLexicals(id.name)) !== undefined) {
-        from = "lexical";
-      } else {
-        stack.push(fnode);
-        continue;
-      }
-      break;
-    }
-
-    if (from !== undefined) { // id.name found in fnode's from/slot 
-      
-      fnode.lexicals.push(new Lexical(id.name, from, slot));
-      
-      from = "lexical";
-      slot = fnode.lexicals.length - 1;
-      while (stack.length > 0) {
-        var fn = stack.pop();
-        fn.lexicals.push(new Lexical(id.name, from, slot));
-        slot = fn.lexicals.length - 1;
-      }
-      
-    } else { // push id.name into unresolved
-
-      this.unresolved.push({
-        name : id.name
-      });
-    }
-  }
-}
-
-/**
- * build the function node tree
- * 
- * @param node
- *          must be the root node of ast
- * @returns root node of function node tree
- */
-function build_function_tree(node) {
-
-  var rootnode; // the root node of tree
-  var funcnode_uid = 0; // unique id
-  var currentFuncNode; // iterator
-
-  function visit(astnode, parent, prop, idx) {
-
-    var fnode;
-
-    // every ast node has a type property
-    if (!astnode || typeof astnode.type !== "string")
-      return;
-
-    if (astnode.type == "Program") {
-
-      fnode = new FunctionNode(funcnode_uid++, astnode, undefined);
-
-      // reverse annotation for debug
-      astnode.fnode = fnode;
-      rootnode = fnode;
-      currentFuncNode = fnode;
-    } else if (astnode.type == "FunctionDeclaration"
-        || astnode.type == "FunctionExpression") {
-
-      fnode = new FunctionNode(funcnode_uid++, astnode, currentFuncNode);
-
-      // reverse annotation for debug
-      astnode.fnode = fnode;
-      currentFuncNode.children.push(fnode);
-      currentFuncNode = fnode;
-    }
-
-    for ( var prop in astnode) {
-
-      // bypass parent link
-      if (prop === "__parent__")
-        continue;
-
-      var child = astnode[prop];
-
-      if (Array.isArray(child)) {
-        for (var i = 0; i < child.length; i++) {
-          visit(child[i], astnode, prop, i);
-        }
-      } else {
-        visit(child, astnode, prop);
-      }
-    }
-
-    if (astnode.type == "FunctionDeclaration"
-        || astnode.type == "FunctionExpression") {
-
-      currentFuncNode = currentFuncNode.parent;
-    }
-  }
-
-  visit(node);
-
-  return rootnode;
-}
+};
 
 FunctionNode.prototype.fillIdentifiers = function() {
 
   var fnode = this;
-
-  function printIdentifier(identifier) {
-
-    var indexString = identifier.prop_index === undefined ? "" : "["
-        + identifier.prop_index + "]";
-
-    console.log("Identifier: " + identifier.name + " in "
-        + identifier.parent_type + " as " + identifier.prop_name + indexString);
-  }
 
   function visit(astnode) {
 
@@ -554,7 +355,8 @@ FunctionNode.prototype.fillIdentifiers = function() {
                 identifier.prop_index = i;
               }
             }
-          } else {
+          }
+          else {
             if (prop === astnode) {
               identifier.prop_name = name;
             }
@@ -565,20 +367,22 @@ FunctionNode.prototype.fillIdentifiers = function() {
       if (identifier.prop_name === undefined)
         throw "error";
 
-      printIdentifier(identifier);
+      // printIdentifier(identifier);
       fnode.identifiers.push(identifier);
       return;
 
-    } else if (astnode.type === "FunctionDeclaration") {
+    }
+    else if (astnode.type === "FunctionDeclaration") {
 
       var identifier = new Identifier(astnode.id.name, astnode.type);
       identifier.prop_name = "id";
 
-      printIdentifier(identifier);
+      // printIdentifier(identifier);
       fnode.identifiers.push(identifier);
       return;
 
-    } else if (astnode.type === "FunctionExpression") {
+    }
+    else if (astnode.type === "FunctionExpression") {
       return;
     }
 
@@ -597,14 +401,333 @@ FunctionNode.prototype.fillIdentifiers = function() {
           for (var i = 0; i < prop.length; i++) {
             visit(prop[i]);
           }
-        } else {
+        }
+        else {
           visit(prop);
         }
       }
     }
   }
 
-  visit(this.astnode);
+  if (this.astnode.type === "Program") {
+    visit(this.astnode);
+  }
+  else if (this.astnode.type === "FunctionExpression" ||
+      this.astnode.type === "FunctionDeclaration") {
+    visit(this.astnode.body);
+  }
+  else {
+    throw "error";
+  }
+};
+
+/**
+ * This function can only be used in pre-visitor
+ * 
+ * It requires all ancestors have proccessed lexicals already
+ */
+FunctionNode.prototype.fillLexicals = function() {
+
+  for (var i = 0; i < this.identifiers.length; i++) {
+
+    var id = this.identifiers[i];
+
+    // is Property's key
+    if ((id.parent_type === "Property" && id.prop_name === "key") ||
+    // is MemberExpression's property
+    (id.parent_type === "MemberExpression" && id.prop_name === "property") ||
+    // in arguments
+    this.findNameInArguments(id.name) !== undefined ||
+    // in locals
+    this.findNameInLocals(id.name) !== undefined ||
+    // in lexicals
+    this.findNameInLexicals(id.name) !== undefined ||
+    // failed to resolve previously
+    this.findNameInUnresolved(id.name) !== undefined)
+      continue;
+
+    var from, slot, stack = [];
+    for (var fnode = this; fnode.parent !== undefined; fnode = fnode.parent) {
+
+      if ((slot = fnode.parent.findNameInArguments(id.name)) !== undefined) {
+        from = "argument";
+      }
+      else if ((slot = fnode.parent.findNameInLocals(id.name)) !== undefined) {
+        from = "local";
+      }
+      else if ((slot = fnode.parent.findNameInLexicals(id.name)) !== undefined) {
+        from = "lexical";
+      }
+      else {
+        stack.push(fnode);
+        continue;
+      }
+      break;
+    }
+
+    if (from !== undefined) { // id.name found in fnode's from/slot
+
+      fnode.lexicals.push(new Lexical(id.name, from, slot));
+
+      from = "lexical";
+      slot = fnode.lexicals.length - 1;
+      while (stack.length > 0) {
+        var fn = stack.pop();
+        fn.lexicals.push(new Lexical(id.name, from, slot));
+        slot = fn.lexicals.length - 1;
+      }
+
+    }
+    else { // push id.name into unresolved
+
+      this.unresolved.push({
+        name : id.name
+      });
+    }
+  }
+};
+
+FunctionNode.prototype.fillLocals = function() {
+
+  for (var i = 0; i < this.identifiers.length; i++) {
+
+    var id = this.identifiers[i];
+
+    if (id.parent_type == "VariableDeclarator"
+        || id.parent_type == "FunctionDeclaration") {
+
+      // bypass same name in arguments
+      if (this.findNameInArguments(id.name) !== undefined)
+        continue;
+
+      if (this.findNameInLocals(id.name) !== undefined)
+        continue;
+
+      this.localvars.push({
+        name : id.name
+      });
+    }
+  }
+};
+
+FunctionNode.prototype.findNameInArguments = function(name) {
+
+  if (this.arguments.length === 0)
+    return;
+
+  /**
+   * Searching in reverse order is important!
+   * 
+   * In javascript, something like this:
+   * 
+   * function(x, x, x) { ... }
+   * 
+   * is valid. The last one rules.
+   */
+  for (var i = this.arguments.length - 1; i >= 0; i--) {
+    if (this.arguments[i].name === name)
+      return i;
+  }
+
+  // return undefined
+};
+
+FunctionNode.prototype.findNameInLocals = function(name) {
+
+  if (this.localvars.length === 0)
+    return;
+
+  for (var i = 0; i < this.localvars.length; i++) {
+    if (this.localvars[i].name === name)
+      return i;
+  }
+};
+
+
+
+FunctionNode.prototype.findNameInLexicals = function(name) {
+
+  if (this.lexicals.length === 0)
+    return;
+
+  for (var i = 0; i < this.lexicals.length; i++) {
+    if (this.lexicals[i].name === name)
+      return i;
+  }
+}
+
+FunctionNode.prototype.findNameInUnresolved = function(name) {
+
+  if (this.unresolved.length === 0)
+    return;
+
+  for (var i = 0; i < this.unresolved.length; i++) {
+    if (this.unresolved[i].name === name)
+      return i;
+  }
+}
+
+
+
+/**
+ * build the function node tree
+ * 
+ * @param node
+ *          must be the root node of ast
+ * @returns root node of function node tree
+ */
+function build_function_tree(node) {
+
+  var rootnode; // the root node of tree
+  var funcnode_uid = 0; // unique id
+  var currentFuncNode; // iterator
+
+  function visit(astnode, parent, prop, idx) {
+
+    var fnode;
+
+    // every ast node has a type property
+    if (!astnode || typeof astnode.type !== "string")
+      return;
+
+    if (astnode.type == "Program") {
+
+      fnode = new FunctionNode(funcnode_uid++, astnode, undefined);
+
+      // reverse annotation for debug
+      astnode.fnode = fnode;
+      rootnode = fnode;
+      currentFuncNode = fnode;
+    }
+    else if (astnode.type == "FunctionDeclaration"
+        || astnode.type == "FunctionExpression") {
+
+      fnode = new FunctionNode(funcnode_uid++, astnode, currentFuncNode);
+
+      // reverse annotation for debug
+      astnode.fnode = fnode;
+      currentFuncNode.children.push(fnode);
+      currentFuncNode = fnode;
+    }
+
+    for ( var prop in astnode) {
+
+      // bypass parent link
+      if (prop === "__parent__")
+        continue;
+
+      var child = astnode[prop];
+
+      if (Array.isArray(child)) {
+        for (var i = 0; i < child.length; i++) {
+          visit(child[i], astnode, prop, i);
+        }
+      }
+      else {
+        visit(child, astnode, prop);
+      }
+    }
+
+    if (astnode.type == "FunctionDeclaration"
+        || astnode.type == "FunctionExpression") {
+
+      currentFuncNode = currentFuncNode.parent;
+    }
+  }
+
+  visit(node);
+
+  return rootnode;
+}
+
+FunctionNode.prototype.printIdentifier = function(identifier) {
+
+  var indexString = identifier.prop_index === undefined ? "" : "["
+      + identifier.prop_index + "]";
+
+  console.log(" :: " + identifier.name + " in "
+      + identifier.parent_type + " as " + identifier.prop_name + indexString);
+};
+
+FunctionNode.prototype.printAll = function() {
+  this.printAllIdentifiers();
+  this.printAllArguments();
+  this.printAllLocals();
+  this.printAllLexicals();
+  this.printAllUnresolved();
+};
+
+FunctionNode.prototype.printAllArguments = function() {
+  
+  var len = this.arguments.length;
+  
+  if (len === 0) {
+    console.log("Function Node " + this.uid + " does NOT have any arguments");
+    return;
+  }
+  
+  console.log("Function Node " + this.uid + " has " + len + " arguments");
+  for (var i = 0; i < len; i++) {
+    console.log(this.arguments[i].name);
+  }
+};
+
+FunctionNode.prototype.printAllIdentifiers = function(){
+  
+  var len = this.identifiers.length;
+  
+  if (len === 0) {
+    console.log("Function Node " + this.uid + " does NOT have any identifiers");
+    return;
+  }
+  
+  console.log("Function Node " + this.uid + " has " + len + " identifier(s)" );
+  for (var i = 0; i < len; i ++) {
+    this.printIdentifier(this.identifiers[i]);
+  }
+};
+
+FunctionNode.prototype.printAllLocals = function() {
+  
+  var len = this.localvars.length;
+  if (len === 0) {
+    console.log("Function Node " + this.uid + " does NOT have any locals");
+    return;
+  }
+  
+  console.log("Function Node " + this.uid + " has " + len + " local(s)" );
+  for (var i = 0; i < len; i ++) {
+    console.log(this.localvars[i].name);
+  }
+};
+
+FunctionNode.prototype.printAllLexicals = function() {
+  
+  var len = this.lexicals.length;
+  if (len === 0) {
+    console.log("Function Node " + this.uid + " does Not have any lexicals");
+    return;
+  }
+  
+  console.log("Function Node " + this.uid + " has " + len + " lexical(s)");
+  for (var i = 0; i < len; i++) {
+    var lex = this.lexicals[i];
+    console.log(lex.name + " from parent's " + lex.from + " slot " + lex.slot);
+  }
+}
+
+FunctionNode.prototype.printAllUnresolved = function() {
+  
+  var len = this.unresolved.length;
+  if (len == 0) {
+    console.log("Function Node " + this.uid + " does Not have any unresolved");
+    return;
+  }
+  
+  console.log("Function Node " + this.uid + " has " + len + " unresolved");
+  for (var i = 0; i < len; i ++) {
+    console.log(this.unresolved[i].name);
+  }
 }
 
 /**
@@ -703,12 +826,14 @@ function annotate(fnode) {
           name : astnode.declarations[i].id.name,
         });
       }
-    } else if (astnode.type == 'FunctionDeclaration') {
+    }
+    else if (astnode.type == 'FunctionDeclaration') {
       fnode.locals.push({
         name : astnode.id.name,
       })
       return; // Do not recurse into function.
-    } else if (astnode.type == 'FunctionExpression') {
+    }
+    else if (astnode.type == 'FunctionExpression') {
       return; // Do not recurse into function.
     }
 
@@ -728,7 +853,8 @@ function annotate(fnode) {
           for (var i = 0; i < prop.length; i++) {
             recurse(prop[i]);
           }
-        } else {
+        }
+        else {
           recurse(prop);
         }
       }
@@ -752,16 +878,19 @@ function annotate(fnode) {
       if (USE_RB_TEST === true && astnode.name === "rb_test"
           && astnode.__parent__.type === "CallExpression") {
         // bypass this identifier
-      } else if (ast_stack.length > 0
-          && ast_stack[0].type === "MemberExpression"
+      }
+      else if (ast_stack.length > 0 && ast_stack[0].type === "MemberExpression"
           && astnode === ast_stack[0].property) {
         // bypass property identifier but not object
-      } else {
+      }
+      else {
         name = astnode.name;
       }
-    } else if (astnode.type == 'FunctionDeclaration') {
+    }
+    else if (astnode.type == 'FunctionDeclaration') {
       return; // Do not recurse into function.
-    } else if (astnode.type == 'FunctionExpression') {
+    }
+    else if (astnode.type == 'FunctionExpression') {
       return; // Do not recurse into function.
     }
 
@@ -769,11 +898,14 @@ function annotate(fnode) {
     if (name) {
       if (find_name_in_locals(name)) {
         // console.log('id: ' + name + ' found in locals');
-      } else if (find_name_in_parameters(name)) {
+      }
+      else if (find_name_in_parameters(name)) {
         // console.log('id: ' + name + ' found in parameters');
-      } else if (find_name_in_freevars(name)) {
+      }
+      else if (find_name_in_freevars(name)) {
         // console.log('id: ' + name + ' found in freevars');
-      } else {
+      }
+      else {
         fnode.freevars.push({
           name : name,
         });
@@ -798,7 +930,8 @@ function annotate(fnode) {
           for (var i = 0; i < prop.length; i++) {
             recurse(prop[i]);
           }
-        } else {
+        }
+        else {
           recurse(prop);
         }
       }
@@ -843,8 +976,9 @@ function resolve_freevar(parent, freevar) {
 
   var i;
 
-  if (parent === undefined)
+  if (parent === undefined) {
     throw "Cannot resolve freevar for root node.";
+  }
 
   // find in parameter
   for (i = 0; i < parent.parameters.length; i++) {
@@ -891,9 +1025,11 @@ function prepare(astroot, opt_logftree) {
     console.log(JSON.stringify(fnroot, function(key, value) {
       if (key === "parent") { // suppress circular reference
         return (value === undefined) ? undefined : value.uid;
-      } else if (key === "astnode") { // supress ast node
+      }
+      else if (key === "astnode") { // supress ast node
         return undefined;
-      } else
+      }
+      else
         return value;
     }, 2));
   }
@@ -901,36 +1037,41 @@ function prepare(astroot, opt_logftree) {
   fnode_visit(fnroot, function(fn) {
     // populate_identifiers(fn);
     fn.fillIdentifiers();
+    fn.fillArguments();
+    fn.fillLocals();
+    fn.fillLexicals();
+    fn.printAll();
   });
 
-  // annotate
-  fnode_visit(fnroot, function(fn) {
-    annotate(fn);
-  });
-
-  // resolve free vars
-  fnode_visit(fnroot, function(fn) {
-    var i, found;
-    if (fn.parent === undefined) {
-      if (fn.parameters.length !== 0 || fn.freevars.length !== 0)
-        throw "root node should NOT has parameters or freevars";
-    }
-
-    for (i = 0; i < fn.freevars.length; i++) {
-      resolve_freevar(fn.parent, fn.freevars[i]);
-    }
-  });
-
-  // log resolved freevars
-  fnode_visit(fnroot, function(fn) {
-
-    // console.log(fn.uid + ' freevars : ' + fn.freevars.length);
-    for (var i = 0; i < fn.freevars.length; i++) {
-      var v = fn.freevars[i];
-      // console.log(' name: ' + v.name + ', from: ' + v.from + ', slot: '
-      // + v.slot);
-    }
-  });
+  
+//  // annotate
+//  fnode_visit(fnroot, function(fn) {
+//    annotate(fn);
+//  });
+//
+//  // resolve free vars
+//  fnode_visit(fnroot, function(fn) {
+//    var i, found;
+//    if (fn.parent === undefined) {
+//      if (fn.parameters.length !== 0 || fn.freevars.length !== 0)
+//        throw "root node should NOT has parameters or freevars";
+//    }
+//
+//    for (i = 0; i < fn.freevars.length; i++) {
+//      resolve_freevar(fn.parent, fn.freevars[i]);
+//    }
+//  });
+//
+//  // log resolved freevars
+//  fnode_visit(fnroot, function(fn) {
+//
+//    // console.log(fn.uid + ' freevars : ' + fn.freevars.length);
+//    for (var i = 0; i < fn.freevars.length; i++) {
+//      var v = fn.freevars[i];
+//      // console.log(' name: ' + v.name + ', from: ' + v.from + ', slot: '
+//      // + v.slot);
+//    }
+//  });
 
   return fnroot;
 }
@@ -1225,7 +1366,8 @@ function compileIdentifier(fn, ast) {
   if (ast.__parent__.type === "MemberExpression") {
     if (ast === ast.__parent__.object) {
       // find identifier in scope
-    } else if (ast === ast.__parent__.property) {
+    }
+    else if (ast === ast.__parent__.property) {
       // treat identifier as operator
       emitcode(fn, "LITA", "PROP", ast.name);
       return;
@@ -1239,7 +1381,8 @@ function compileIdentifier(fn, ast) {
       arg1 : 'PARAM',
       arg2 : index
     });
-  } else {
+  }
+  else {
     index = find_name_in_locals(fn, ast.name);
     if (index !== undefined) {
       fn.emit({
@@ -1247,7 +1390,8 @@ function compileIdentifier(fn, ast) {
         arg1 : 'LOCAL',
         arg2 : index
       });
-    } else {
+    }
+    else {
       index = find_name_in_freevars(fn, ast.name);
       if (index !== undefined) {
         fn.emit({
@@ -1255,7 +1399,8 @@ function compileIdentifier(fn, ast) {
           arg1 : 'FRVAR',
           arg2 : index
         });
-      } else
+      }
+      else
         throw "Identifier: " + ast.name + " not found";
     }
   }
@@ -1351,7 +1496,8 @@ function compileReturnStatement(fn, ast) {
     fn.emit({
       op : "RET",
     });
-  } else {
+  }
+  else {
     compileAST(fn, ast.argument);
     fn.emit({
       op : "RET",
@@ -1379,6 +1525,7 @@ function compileVariableDeclaration(fn, ast) {
  *          ast node
  */
 function compileVariableDeclarator(fn, ast) {
+  
   // interface VariableDeclarator <: Node {
   // type: "VariableDeclarator";
   // id: Pattern;
@@ -1430,10 +1577,12 @@ function compileFN(fn, silent) {
 
   if (fn.astnode.type === "Program") {
     compileAST(fn, fn.astnode, silent);
-  } else if (fn.astnode.type === "FunctionDeclaration"
+  }
+  else if (fn.astnode.type === "FunctionDeclaration"
       || fn.astnode.type === "FunctionExpression") {
     compileAST(fn, fn.astnode.body, silent);
-  } else {
+  }
+  else {
     throw "Unexpected fnode ast type";
   }
 
