@@ -266,8 +266,10 @@ function run_testsuite(testsuite) {
     if (testsuite.hasOwnProperty(group)) {
       group_count++;
       for ( var testcase in testsuite[group]) {
-        testcase_count++;
-        run_case(TESTS[group][testcase], false, true);
+        if (testsuite[group].hasOwnProperty(testcase)) {
+          testcase_count++;
+          run_case(testsuite[group][testcase], false, true);
+        }
       }
     }
   }
@@ -277,22 +279,9 @@ function run_testsuite(testsuite) {
   console.log(Format.hline);
 }
 
-// TODO no need to loop
 function run_single_in_suite(testsuite, group_name, testcase_name) {
 
   generate_testcase_name(testsuite);
-
-  // for ( var group in testsuite) {
-  // if (group === group_name) {
-  // for ( var testcase in testsuite[group]) {
-  // if (testcase === testcase_name) {
-  // run_case(TESTS[group][testcase], false, true);
-  // break;
-  // }
-  // }
-  // break;
-  // }
-  // }
   run_case(testsuite[group_name][testcase_name]);
 }
 
@@ -356,6 +345,8 @@ RemoteTest.prototype.toString = function() {
 
 function SocketTestRunner(suite, group, name) {
 
+  var i;
+
   this.testcase = undefined;
   this.testname = undefined;
   this.remote = new RemoteTest();
@@ -363,15 +354,21 @@ function SocketTestRunner(suite, group, name) {
   this.all = [];
 
   if (group === undefined && name === undefined) {
-    for ( var i in suite) {
-      for ( var j in suite[i]) {
-        this.all.push(suite[i][i]);
+    for (i in suite) {
+      if (suite.hasOwnProperty(i)) {
+        for ( var j in suite[i]) {
+          if (suite[i].hasOwnProperty(j)) {
+            this.all.push(suite[i][i]);
+          }
+        }
       }
     }
   }
   else if (name === undefined) {
-    for ( var i in suite[group]) {
-      this.all.push(suite[group][i]);
+    for (i in suite[group]) {
+      if (suite[group].hasOwnProperty(i)) {
+        this.all.push(suite[group][i]);
+      }
     }
   }
   else {
@@ -739,7 +736,7 @@ var TESTS = {
   boolean : testcase_boolean,
   control : testcase_control,
   object : testcase_object,
-// global : testcase_global,
+  global : testcase_global,
 };
 
 // run_testsuite(TESTS);

@@ -78,7 +78,8 @@ ObjectObject.prototype.set_property = function(name, object_index) {
     });
 
     this.vm.object_ref_incr(object_index);
-  } else {
+  }
+  else {
     var old = this.properties[i].index;
     this.properties[i].index = object_index;
     this.vm.object_ref_incr(object_index);
@@ -160,9 +161,9 @@ RedbankVM.prototype.assert_no_leak = function() {
   // check display
   // check stack
   if (this.Stack.length > 0) {
-    console.log("mem leak @ stack.")
+    console.log("mem leak @ stack.");
   }
-}
+};
 
 RedbankVM.prototype.assert_var_object = function(v) {
   if (v.type !== VT_OBJ)
@@ -248,12 +249,12 @@ RedbankVM.prototype.assert = function(expr) {
 }
 
 RedbankVM.prototype.assertStackLengthEqual = function(len) {
-  
+
   this.assert(this.Stack.length == len);
 }
 
 RedbankVM.prototype.assertStackSlotUndefined = function(slot) {
-  
+
   this.assert(this.Stack.length > slot);
   this.assert(this.Stack[slot].type === "Object");
   this.assert(this.Stack[slot].index === 0);
@@ -314,7 +315,8 @@ RedbankVM.prototype.object_ref_decr = function(index) {
       for (var i = 0; i < obj.freevars.length; i++) {
         this.link_ref_decr(obj.freevars[i].index);
       }
-    } else if (obj.type === "object") {
+    }
+    else if (obj.type === "object") {
       for (var i = 0; i < obj.properties.length; i++) {
         this.object_ref_decr(obj.properties[i].index);
       }
@@ -385,15 +387,16 @@ RedbankVM.prototype.lid2sid = function(lid) {
  */
 RedbankVM.prototype.ARGC = function() {
 
-  if (this.FP === 0)
+  if (this.FP === 0) {
     throw "main function has no args";
+  }
 
   var v = this.Stack[this.FP - 3];
 
   this.assert_var_object_number(v);
 
   return this.Objects[v.index].value;
-}
+};
 
 /**
  * convert parameter index to (absolute) stack index
@@ -404,7 +407,7 @@ RedbankVM.prototype.ARGC = function() {
  */
 RedbankVM.prototype.pid2sid = function(pid) {
   return this.FP - 3 - this.ARGC() + pid;
-}
+};
 
 /**
  * push a JSVar onto stack, update reference count if necessary
@@ -420,10 +423,11 @@ RedbankVM.prototype.push = function(v) {
 
   if (v.type === VT_OBJ) {
     this.Objects[v.index].ref++;
-  } else if (v.type === VT_LNK) { // pushing parameters
+  }
+  else if (v.type === VT_LNK) { // pushing parameters
     this.Links[v.index].ref++;
   }
-}
+};
 
 /**
  * 
@@ -435,12 +439,13 @@ RedbankVM.prototype.pop = function() {
 
   if (v.type === VT_OBJ) {
     this.object_ref_decr(v.index);
-  } else if (v.type === VT_LNK) {
+  }
+  else if (v.type === VT_LNK) {
     this.link_ref_decr(v.index);
   }
 
   return v;
-}
+};
 
 /**
  * Swap TOS and NOS
@@ -454,7 +459,7 @@ RedbankVM.prototype.swap = function() {
 
   this.Stack.push(n1);
   this.Stack.push(n2);
-}
+};
 
 /**
  * set an object var to local slot
@@ -472,13 +477,16 @@ RedbankVM.prototype.set_to_local = function(addr, objvar) {
     this.object_ref_decr(this.Links[v.index].object);
     this.Links[v.index].object = objvar.index;
     this.object_ref_incr(objvar.index);
-  } else if (v.type === VT_OBJ) {
+  }
+  else if (v.type === VT_OBJ) {
     this.object_ref_decr(v.index);
     this.Stack[this.lid2sid(addr.index)] = objvar;
     this.object_ref_incr(objvar.index);
-  } else
+  }
+  else {
     throw "unrecognized var type in local slot";
-}
+  }
+};
 
 /**
  * set an object var to param slot
@@ -496,13 +504,16 @@ RedbankVM.prototype.set_to_param = function(addr, objvar) {
     this.object_ref_decr(this.Links[v.index].object);
     this.Links[v.index].object = objvar.index;
     this.object_ref_incr(objvar.index);
-  } else if (v.type === VT_OBJ) {
+  }
+  else if (v.type === VT_OBJ) {
     this.object_ref_decr(v.index);
-    this.Stack[pid2sid(addr.index)] = objvar;
+    this.Stack[this.pid2sid(addr.index)] = objvar;
     this.object_ref_incr(objvar.index);
-  } else
+  }
+  else {
     throw "unrecognized var type in param slot";
-}
+  }
+};
 
 /**
  * set an object var to frvar slot
@@ -521,9 +532,11 @@ RedbankVM.prototype.set_to_frvar = function(addr, objvar) {
     this.object_ref_decr(this.Links[v.index].object);
     this.Links[v.index].object = objvar.index;
     this.object_ref_incr(objvar.index);
-  } else
+  }
+  else {
     throw "unrecognized var type in frvar slot";
-}
+  }
+};
 
 RedbankVM.prototype.set_to_object_prop = function(dst_objvar, propvar,
     src_objvar) {
@@ -535,7 +548,7 @@ RedbankVM.prototype.set_to_object_prop = function(dst_objvar, propvar,
   var dst_object = this.Objects[dst_object_index];
 
   dst_object.set_property(propvar.index, src_objvar.index);
-}
+};
 
 /**
  * Store N1 to addr
@@ -554,20 +567,24 @@ RedbankVM.prototype.store = function() {
     this.pop();
     this.pop();
 
-  } else if (addr.type === VT_ARG) { // store to arg
+  }
+  else if (addr.type === VT_ARG) { // store to arg
 
     this.set_to_param(this.NOS(), this.TOS());
     this.pop();
     this.pop();
 
-  } else if (addr.type === VT_FRV) { // store to freevar
+  }
+  else if (addr.type === VT_FRV) { // store to freevar
 
     this.set_to_frvar(this.NOS(), this.TOS());
     this.pop();
     this.pop();
-  } else
+  }
+  else {
     throw "not supported address type for STORE";
-}
+  }
+};
 
 /**
  * Assign N1 to addr and left N1 as TOS
@@ -585,29 +602,35 @@ RedbankVM.prototype.assign = function() {
     this.set_to_local(this.NOS(), this.TOS());
     this.swap();
     this.pop();
-  } else if (addr.type === VT_ARG) {
+  }
+  else if (addr.type === VT_ARG) {
     this.set_to_param(this.NOS(), this.TOS());
     this.swap();
     this.pop();
-  } else if (addr.type === VT_FRV) {
+  }
+  else if (addr.type === VT_FRV) {
     this.set_to_frvar(this.NOS(), this.TOS());
     this.swap();
     this.pop();
-  } else if (addr.type === VT_PRO) {
+  }
+  else if (addr.type === VT_PRO) {
     this.set_to_object_prop(this.ThirdOS(), this.NOS(), this.TOS());
     this.swap();
     this.pop();
     this.swap();
     this.pop();
-  } else
+  }
+  else {
     throw "not supported yet";
-}
+  }
+};
 
 RedbankVM.prototype.printstack = function() {
-  
+
   if (this.Stack.length === 0) {
     console.log("STACK Empty");
-  } else {
+  }
+  else {
     console.log("STACK size: " + this.Stack.length);
     for (var i = this.Stack.length - 1; i >= 0; i--) {
       var v = this.Stack[i];
@@ -617,28 +640,36 @@ RedbankVM.prototype.printstack = function() {
 
         if (obj.type === "object") {
           console.log(i + " : " + index + " (object) ref: " + obj.ref);
-        } else if (obj.type === "function") {
+        }
+        else if (obj.type === "function") {
           var func_prt = VT_OBJ + " " + index + " (function) " + "entry: "
               + obj.value + ", ref: " + obj.ref;
           console.log(i + " : " + func_prt);
-        } else if (obj.type === "undefined") {
+        }
+        else if (obj.type === "undefined") {
           console.log(i + " : " + "UNDEFINED");
-        } else {
+        }
+        else {
           console.log(i + " : " + VT_OBJ + ", index: " + index + ", value: "
               + obj.value + ", ref: " + obj.ref);
         }
 
-      } else if (v.type === VT_LOC) {
+      }
+      else if (v.type === VT_LOC) {
         console.log(i + " : [addr] " + VT_LOC + " " + v.index);
         // } else if (v.type === VT_VAL) {
         // console.log(i + " : " + VT_VAL + " " + v.index);
-      } else if (v.type === VT_ARG) {
+      }
+      else if (v.type === VT_ARG) {
         console.log(i + " : [addr] " + VT_ARG + " " + v.index);
-      } else if (v.type === VT_FRV) {
+      }
+      else if (v.type === VT_FRV) {
         console.log(i + " : [addr] " + VT_FRV + " " + v.index);
-      } else if (v.type === "undefined") {
+      }
+      else if (v.type === "undefined") {
         console.log(i + " : UNDEFINED");
-      } else {
+      }
+      else {
         console.log(i + " : " + v.type);
       }
     }
@@ -702,10 +733,11 @@ RedbankVM.prototype.step = function(code, bytecode) {
 
   case "CAPTURE":
     var f = this.Objects[this.TOS().index];
-    if (bytecode.arg1 === "parameters" || bytecode.arg1 === "locals") {
-      if (bytecode.arg1 === "parameters") {
+    if (bytecode.arg1 === "argument" || bytecode.arg1 === "local") {
+      if (bytecode.arg1 === "argument") {
         v = this.Stack[this.pid2sid(bytecode.arg2)];
-      } else {
+      }
+      else {
         v = this.Stack[this.lid2sid(bytecode.arg2)];
       }
 
@@ -713,7 +745,8 @@ RedbankVM.prototype.step = function(code, bytecode) {
         f.freevars.push(new JSVar(VT_LNK, v.index));
         this.Links[v.index].ref++;
 
-      } else if (v.type === VT_OBJ) {
+      }
+      else if (v.type === VT_OBJ) {
         id = this.alloc_link();
 
         this.Links[id] = {
@@ -726,12 +759,15 @@ RedbankVM.prototype.step = function(code, bytecode) {
         v.index = id;
 
         f.freevars.push(new JSVar(VT_LNK, id));
-      } else
+      }
+      else
         throw "ERROR";
-    } else if (bytecode.arg1 === "freevars") {
+    }
+    else if (bytecode.arg1 === "lexical") {
       // copy link id and incr reference count
-    } else {
-      throw "error capture from type";
+    }
+    else {
+      throw "error capture from type : " + bytecode.arg1;
     }
     break;
 
@@ -744,36 +780,47 @@ RedbankVM.prototype.step = function(code, bytecode) {
     if (addr.type === VT_LOC) {
       v = this.Stack[this.lid2sid(addr.index)];
       if (v.type === VT_OBJ) {
-      } else if (v.type === VT_LNK) {
+      }
+      else if (v.type === VT_LNK) {
         v = new JSVar(VT_OBJ, this.Links[v.index].object);
-      } else
+      }
+      else
         throw "Unsupported var type in local slot";
-    } else if (addr.type === VT_ARG) {
+    }
+    else if (addr.type === VT_ARG) {
       v = this.Stack[this.pid2sid(addr.index)];
       if (v.type === VT_OBJ) {
-      } else if (v.type === VT_LNK) {
+      }
+      else if (v.type === VT_LNK) {
         v = new JSVar(VT_OBJ, this.Links[v.index].object);
-      } else
+      }
+      else
         throw "Unsupported var type in param slot";
-    } else if (addr.type === VT_FRV) {
+    }
+    else if (addr.type === VT_FRV) {
       v = this.freevars()[addr.index] // freevar
       if (v.type === VT_LNK) {
         v = new JSVar(VT_OBJ, this.Links[v.index].object);
-      } else
+      }
+      else
         throw "Unsupported var type in frvar slot";
-    } else if (addr.type === VT_PRO) {
+    }
+    else if (addr.type === VT_PRO) {
 
       var obj = this.Objects[this.TOS().index];
       var propIndex = obj.find_prop(addr.index);
       if (propIndex === undefined) {
         v = new JSVar(VT_OBJ, 0);
-      } else {
+      }
+      else {
         v = new JSVar(VT_OBJ, obj.properties[propIndex].index);
       }
 
-      this.pop(); // TODO be careful for pop first push second for the same object may be delete. 
+      this.pop(); // TODO be careful for pop first push second for the same
+      // object may be delete.
 
-    } else
+    }
+    else
       throw "not supported yet.";
     this.push(v);
     break;
@@ -796,7 +843,8 @@ RedbankVM.prototype.step = function(code, bytecode) {
     this.pop();
     if (v) {
       this.PC = this.findLabel(this.code, bytecode.arg1);
-    } else {
+    }
+    else {
       this.PC = this.findLabel(this.code, bytecode.arg2);
     }
     break;
@@ -810,16 +858,20 @@ RedbankVM.prototype.step = function(code, bytecode) {
     if (bytecode.arg1 === "LOCAL") {
       v = new JSVar(VT_LOC, bytecode.arg2);
       this.Stack.push(v);
-    } else if (bytecode.arg1 === 'PARAM') {
+    }
+    else if (bytecode.arg1 === 'PARAM') {
       v = new JSVar(VT_ARG, bytecode.arg2);
       this.Stack.push(v);
-    } else if (bytecode.arg1 === 'FRVAR') {
+    }
+    else if (bytecode.arg1 === 'FRVAR') {
       v = new JSVar(VT_FRV, bytecode.arg2);
       this.Stack.push(v);
-    } else if (bytecode.arg1 === "PROP") {
+    }
+    else if (bytecode.arg1 === "PROP") {
       v = new JSVar(VT_PRO, bytecode.arg2);
       this.Stack.push(v);
-    } else
+    }
+    else
       throw "not supported yet";
 
     break;
@@ -851,16 +903,19 @@ RedbankVM.prototype.step = function(code, bytecode) {
       if (!(bytecode.arg1 in this.testcase)) {
         console.log(Format.dotline
             + "WARNING :: testcase does not have function " + bytecode.arg1);
-      } else if (typeof this.testcase[bytecode.arg1] !== 'function') {
+      }
+      else if (typeof this.testcase[bytecode.arg1] !== 'function') {
         console.log(Format.dotline + "WARNING :: testcase's property "
             + this.testcase[bytecode.arg1] + " is not a function");
-      } else {
+      }
+      else {
         console.log(Format.dotline + "[" + this.testcase.group + "] "
             + this.testcase.name);
         this.testcase[bytecode.arg1](this);
         console.log(Format.dotline + "[PASS]");
       }
-    } else {
+    }
+    else {
       console.log(Format.dotline + "WARNING :: testcase not found");
     }
     break;
@@ -872,7 +927,8 @@ RedbankVM.prototype.step = function(code, bytecode) {
       }
       this.PC = this.code.length; // exit
 
-    } else {
+    }
+    else {
 
       var result = undefined;
       var argc = this.ARGC();
@@ -898,7 +954,8 @@ RedbankVM.prototype.step = function(code, bytecode) {
 
       if (result === undefined) { // no return value provided
         this.Stack.push(new JSVar(VT_OBJ, 0));
-      } else {
+      }
+      else {
         this.Stack.push(result);
       }
     }
@@ -967,7 +1024,8 @@ RedbankVM.prototype.step = function(code, bytecode) {
         && this.Objects[this.TOS().index].type === this.Objects[this.NOS().index].type
         && this.Objects[this.TOS().index].value === this.Objects[this.NOS().index].value) {
       v = new ValueObject(this, true);
-    } else {
+    }
+    else {
       v = new ValueObject(this, false);
     }
 
@@ -994,7 +1052,7 @@ RedbankVM.prototype.run = function(input, testcase) {
   this.Objects[0].ref = -1;
 
   console.log(Format.hline);
-  console.log("[[Start Running ]]")
+  console.log("[[Start Running ]]");
   console.log(Format.hline);
 
   while (this.PC < this.code.length) {
