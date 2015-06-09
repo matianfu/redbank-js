@@ -272,17 +272,18 @@ function run_single_in_suite(testsuite, group_name, testcase_name) {
 
   generate_testcase_name(testsuite);
 
-  for ( var group in testsuite) {
-    if (group === group_name) {
-      for ( var testcase in testsuite[group]) {
-        if (testcase === testcase_name) {
-          run_case(TESTS[group][testcase], false, true);
-          break;
-        }
-      }
-      break;
-    }
-  }
+//  for ( var group in testsuite) {
+//    if (group === group_name) {
+//      for ( var testcase in testsuite[group]) {
+//        if (testcase === testcase_name) {
+//          run_case(TESTS[group][testcase], false, true);
+//          break;
+//        }
+//      }
+//      break;
+//    }
+//  }
+  run_case(testsuite[group_name][testcase_name]);
 }
 
 /******************************************************************************
@@ -341,6 +342,110 @@ RemoteTest.prototype.assertStackSlotNumberValue = function(slot, val) {
 
 RemoteTest.prototype.toString = function() {
   return this.text + '\n';
+}
+
+function SocketTestRunner(suite, group, name) {
+
+  this.testcase = undefined;
+  this.testname = undefined;
+  this.remote = new RemoteTest();
+  this.client = undefined;
+  this.all = [];
+
+  if (group === undefined && name === undefined) {
+    for ( var i in suite) {
+      for ( var j in suite[i]) {
+        this.all.push(suite[i][i]);
+      }
+    }
+  } else if (name == undefined) {
+    for ( var i in suite[group]) {
+      this.all.push(suite[group][i]);
+    }
+  } else {
+    this.all.push(suite[group][name]);
+  }
+}
+
+SocketTestRunner.prototype.handleLine = function(line) {
+
+  var message = JSON.parse(line.toString());
+
+  if (message.command == "READY") {
+
+    console.log("READY");
+    
+    this.testcase = this.all.shift();
+    console.log(Format.hline);
+    console.log("Test Group: " + this.testcase.group + " Case: " + this.testcase.name);
+    
+    console.log("> send bytecode");
+    var string = compile_to_string(this.testcase);
+    console.log(string);
+    this.client.write(string);
+    this.client.write("\n");
+
+  } else if (message.command == "TEST") {
+
+    this.testname = message.argument;
+
+    if (this.testname in this.testcase) {
+
+      console.log("TEST " + message.argument);
+      console.log("> send test case");
+
+      this.remote.reset();
+      this.testcase[this.testname](this.remote);
+      this.client.write(this.remote.toLines());
+
+    } else {
+
+      console.log("property not found in testcase : " + testname);
+      this.client.write("ABORT\n");
+      this.client.destroy();
+    }
+
+  } else if (message.command == "TESTFAIL") {
+
+    console.log("TESTFAIL : " + testname + " @ " + message.argument);
+    this.client.destroy();
+
+  } else if (message.command == "FINISH") {
+
+    console.log("Finish " + message.argument);
+
+    if (this.all.length == 0) {
+      this.client.destroy(); // kill client
+    } else {
+      this.testcase = this.all.shift();
+    }
+  }
+}
+
+SocketTestRunner.prototype.startTcpClient = function() {
+
+  var net = require('net');
+  var client = new net.Socket();
+  var runner = this;
+
+  client.connect(7979, '127.0.0.1', function() {
+
+    console.log('Connected');
+
+    // prepare readline interface
+    var i = readline.createInterface(client, client);
+
+    // register event handler
+    i.on('line', function(line) {
+      runner.handleLine(line);
+    });
+  });
+
+  client.on('close', function() {
+    console.log('Connection closed');
+  });
+
+  this.client = client;
 }
 
 /******************************************************************************
@@ -589,6 +694,16 @@ var testcase_object = {
   }
 }
 
+var testcase_global = {
+  global_undefined : {
+    source : 'var a = undefined;',
+    test : function(vm) {
+      
+    }
+  }
+}
+
+
 /**
  * these group holds test cases planned to be used in future.
  */
@@ -607,6 +722,7 @@ var TESTS = {
   boolean : testcase_boolean,
   control : testcase_control,
   object : testcase_object,
+  // global : testcase_global,
 };
 
 // run_testsuite(TESTS);
@@ -687,112 +803,11 @@ function emit_as_tcp_client(testcase) {
 }
 
 run_testsuite(TESTS);
+// run_single_in_suite(TESTS, "basic", "var_declare");
 
 // emit_as_tcp_client(TESTS["basic"]["var_declare_dual"]);
 
-function SocketTestRunner(suite, group, name) {
 
-  this.testcase = undefined;
-  this.testname = undefined;
-  this.remote = new RemoteTest();
-  this.client = undefined;
-  this.all = [];
-
-  if (group === undefined && name === undefined) {
-    for ( var i in suite) {
-      for ( var j in suite[i]) {
-        this.all.push(suite[i][i]);
-      }
-    }
-  } else if (name == undefined) {
-    for ( var i in suite[group]) {
-      this.all.push(suite[group][i]);
-    }
-  } else {
-    this.all.push(suite[group][name]);
-  }
-}
-
-SocketTestRunner.prototype.handleLine = function(line) {
-
-  var message = JSON.parse(line.toString());
-
-  if (message.command == "READY") {
-
-    console.log("READY");
-    
-    this.testcase = this.all.shift();
-    console.log(Format.hline);
-    console.log("Test Group: " + this.testcase.group + " Case: " + this.testcase.name);
-    
-    console.log("> send bytecode")
-    var string = compile_to_string(this.testcase);
-    console.log(string);
-    this.client.write(string);
-    this.client.write("\n");
-
-  } else if (message.command == "TEST") {
-
-    this.testname = message.argument;
-
-    if (this.testname in this.testcase) {
-
-      console.log("TEST " + message.argument);
-      console.log("> send test case");
-
-      this.remote.reset();
-      this.testcase[this.testname](this.remote);
-      this.client.write(this.remote.toLines());
-
-    } else {
-
-      console.log("property not found in testcase : " + testname);
-      this.client.write("ABORT\n");
-      this.client.destroy();
-    }
-
-  } else if (message.command == "TESTFAIL") {
-
-    console.log("TESTFAIL : " + testname + " @ " + message.argument);
-    this.client.destroy();
-
-  } else if (message.command == "FINISH") {
-
-    console.log("Finish " + message.argument);
-
-    if (this.all.length == 0) {
-      this.client.destroy(); // kill client
-    } else {
-      this.testcase = this.all.shift();
-    }
-  }
-}
-
-SocketTestRunner.prototype.startTcpClient = function() {
-
-  var net = require('net');
-  var client = new net.Socket();
-  var runner = this;
-
-  client.connect(7979, '127.0.0.1', function() {
-
-    console.log('Connected');
-
-    // prepare readline interface
-    var i = readline.createInterface(client, client);
-
-    // register event handler
-    i.on('line', function(line) {
-      runner.handleLine(line);
-    });
-  });
-
-  client.on('close', function() {
-    console.log('Connection closed');
-  });
-
-  this.client = client;
-}
 
 // var runner = new SocketTestRunner(TESTS, "basic");
 // runner.startTcpClient();

@@ -604,6 +604,7 @@ RedbankVM.prototype.assign = function() {
 }
 
 RedbankVM.prototype.printstack = function() {
+  
   if (this.Stack.length === 0) {
     console.log("STACK Empty");
   } else {
