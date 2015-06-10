@@ -202,8 +202,9 @@ function Lexical(name, from, slot) {
   this.slot = slot;
 }
 
-function FunctionNode(uid, astnode, parent) {
+function FunctionNode(compiler, uid, astnode, parent) {
 
+  this.compiler = compiler;
   this.uid = uid;
   this.astnode = astnode;
   this.parent = parent;
@@ -904,10 +905,14 @@ function compileIdentifier(fn, ast) {
 // }
 function compileIfStatement(fn, ast) {
 
-  var begin = newLabel();
-  var after = newLabel();
-  var t = newLabel();
-  var f = newLabel();
+//  var begin = newLabel();
+//  var after = newLabel();
+//  var t = newLabel();
+//  var f = newLabel();
+  var begin = fn.compiler.newLabel();
+  var after = fn.compiler.newLabel();
+  var t = fn.compiler.newLabel();
+  var f = fn.compiler.newLabel();
 
   emitLabel(fn, begin);
   compileAST(fn, ast.test);
@@ -1050,6 +1055,16 @@ function compileFN(fn, silent) {
   fn.emit("RET");
 }
 
+function Compiler() {
+  this.label = 0;
+}
+
+Compiler.prototype.newLabel = function() {
+  return this.label++;
+}
+
+var Compiler = new Compiler(); 
+
 /**
  * build the function node tree
  * 
@@ -1074,7 +1089,7 @@ function build_function_tree(node) {
 
     if (astnode.type === "Program") {
 
-      fnode = new FunctionNode(funcnode_uid++, astnode, undefined);
+      fnode = new FunctionNode(Compiler, funcnode_uid++, astnode, undefined);
 
       // reverse annotation for debug
       astnode.fnode = fnode;
@@ -1084,7 +1099,7 @@ function build_function_tree(node) {
     else if (astnode.type === "FunctionDeclaration"
         || astnode.type === "FunctionExpression") {
 
-      fnode = new FunctionNode(funcnode_uid++, astnode, currentFuncNode);
+      fnode = new FunctionNode(Compiler, funcnode_uid++, astnode, currentFuncNode);
 
       // reverse annotation for debug
       astnode.fnode = fnode;
@@ -1193,6 +1208,8 @@ function merge(fnroot) {
   
   return merged;
 }
+
+
 
 function compile(node, silent) {
 
