@@ -233,6 +233,29 @@ FunctionNode.prototype.emit = function(op, arg1, arg2, arg3) {
   this.emitBytecode(new Bytecode(op, arg1, arg2, arg3));
 };
 
+/*
+ * unconditional jump
+ */
+FunctionNode.prototype.emitJUMP = function(to) {
+  this.emit("JUMP", to);
+};
+
+/**
+ * conditional jump
+ * 
+ * @param t
+ *          label for true
+ * @param f
+ *          label for false
+ */
+FunctionNode.prototype.emitJUMPC = function(t, f) {
+  this.emit("JUMPC", t, f);
+};
+
+FunctionNode.prototype.emitLabel = function(label) {
+  this.emit("LABEL", label);
+};
+
 FunctionNode.prototype.fillArguments = function() {
 
   var i;
@@ -515,8 +538,6 @@ FunctionNode.prototype.findNameInUnresolved = function(name) {
   }
 };
 
-
-
 FunctionNode.prototype.printIdentifier = function(identifier) {
 
   var indexString = identifier.prop_index === undefined ? "" : "["
@@ -607,27 +628,7 @@ FunctionNode.prototype.printAllUnresolved = function() {
   }
 };
 
-
-
 // /////////////////////////////////////////////////////////////////////////////
-
-var _code_label = 1;
-
-function newLabel() {
-  return _code_label++;
-}
-
-function emitLabel(fn, label) {
-  fn.emit("LABEL", label);
-}
-
-function emitJUMP(fn, to) {
-  fn.emit("JUMP", to);
-}
-
-function emitJUMPC(fn, t, f) {
-  fn.emit("JUMPC", t, f);
-}
 
 // interface AssignmentExpression <: Expression {
 // type: "AssignmentExpression";
@@ -905,29 +906,25 @@ function compileIdentifier(fn, ast) {
 // }
 function compileIfStatement(fn, ast) {
 
-//  var begin = newLabel();
-//  var after = newLabel();
-//  var t = newLabel();
-//  var f = newLabel();
   var begin = fn.compiler.newLabel();
   var after = fn.compiler.newLabel();
   var t = fn.compiler.newLabel();
   var f = fn.compiler.newLabel();
 
-  emitLabel(fn, begin);
+  fn.emitLabel(begin);
   compileAST(fn, ast.test);
-  emitJUMPC(fn, t, f);
+  fn.emitJUMPC(t, f);
 
-  emitLabel(fn, t);
+  fn.emitLabel(t);
   compileAST(fn, ast.consequent);
-  emitJUMP(fn, after);
+  fn.emitJUMP(after);
 
-  emitLabel(fn, f);
+  fn.emitLabel(f);
   if (ast.alternate !== null) {
     compileAST(fn, ast.alternate);
   }
-  emitJUMP(fn, after);
-  emitLabel(fn, after);
+  fn.emitJUMP(after);
+  fn.emitLabel(after);
 }
 
 // interface Literal <: Node, Expression {
@@ -1063,7 +1060,7 @@ Compiler.prototype.newLabel = function() {
   return this.label++;
 }
 
-var Compiler = new Compiler(); 
+var Compiler = new Compiler();
 
 /**
  * build the function node tree
@@ -1099,7 +1096,8 @@ function build_function_tree(node) {
     else if (astnode.type === "FunctionDeclaration"
         || astnode.type === "FunctionExpression") {
 
-      fnode = new FunctionNode(Compiler, funcnode_uid++, astnode, currentFuncNode);
+      fnode = new FunctionNode(Compiler, funcnode_uid++, astnode,
+          currentFuncNode);
 
       // reverse annotation for debug
       astnode.fnode = fnode;
@@ -1170,7 +1168,7 @@ function prepare(astroot, opt_logftree) {
 }
 
 function merge(fnroot) {
-  
+
   var i;
   var array = [];
 
@@ -1205,17 +1203,15 @@ function merge(fnroot) {
       merged[i].arg1 = merged[i].arg1.offset;
     }
   }
-  
+
   return merged;
 }
-
-
 
 function compile(node, silent) {
 
   var i;
   var fnroot;
-  
+
   // stage 1: do annotation
   fnroot = prepare(node);
 
