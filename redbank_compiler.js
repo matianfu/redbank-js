@@ -9,6 +9,24 @@ var esutils = require('esutils');
 
 var silent = true;
 
+var expectRValue = [ {
+  parent : "AssignmentExpression",
+  prop : "right"
+}, {
+  parent : "BinaryExpression"
+}, {
+  parent : "CallExpression",
+}, {
+  parent : "MemberExpression",
+  prop : "object"
+}, {
+  parent : "ReturnStatement",
+  prop : "argument"
+}, {
+  parent : "VariableDeclarator",
+  prop : "init"
+} ];
+
 /**
  * This function tells if current expr should be evaluated as address or value
  * 
@@ -258,7 +276,7 @@ FunctionNode.prototype.fillIdentifiers = function() {
 
       identifier = new Identifier(astnode.name, parent.type);
 
-      for ( name in parent) {
+      for (name in parent) {
         if (parent.hasOwnProperty(name)) {
           if (name === "__parent__" || name === "fnode") {
             continue;
@@ -304,15 +322,16 @@ FunctionNode.prototype.fillIdentifiers = function() {
       return;
     }
 
-    for ( name in astnode) {
+    // recursive
+    for (name in astnode) {
 
       if (name === "__parent__" || name === "fnode") {
         continue;
       }
 
       var prop = astnode[name];
-      if (prop && typeof prop == 'object') {
-        if (typeof prop.length == 'number' && prop.splice) {
+      if (prop && typeof prop === 'object') {
+        if (typeof prop.length === 'number' && prop.splice) {
           // Prop is an array.
           for (var i = 0; i < prop.length; i++) {
             visit(prop[i]);
@@ -495,77 +514,7 @@ FunctionNode.prototype.findNameInUnresolved = function(name) {
   }
 };
 
-/**
- * build the function node tree
- * 
- * @param node
- *          must be the root node of ast
- * @returns root node of function node tree
- */
-function build_function_tree(node) {
 
-  var rootnode; // the root node of tree
-  var funcnode_uid = 0; // unique id
-  var currentFuncNode; // iterator
-
-  function visit(astnode, parent, prop, idx) {
-
-    var fnode;
-
-    // every ast node has a type property
-    if (!astnode || typeof astnode.type !== "string") {
-      return;
-    }
-
-    if (astnode.type === "Program") {
-
-      fnode = new FunctionNode(funcnode_uid++, astnode, undefined);
-
-      // reverse annotation for debug
-      astnode.fnode = fnode;
-      rootnode = fnode;
-      currentFuncNode = fnode;
-    }
-    else if (astnode.type === "FunctionDeclaration"
-        || astnode.type === "FunctionExpression") {
-
-      fnode = new FunctionNode(funcnode_uid++, astnode, currentFuncNode);
-
-      // reverse annotation for debug
-      astnode.fnode = fnode;
-      currentFuncNode.children.push(fnode);
-      currentFuncNode = fnode;
-    }
-
-    for ( var prop in astnode) {
-
-      // bypass parent link
-      if (prop === "__parent__")
-        continue;
-
-      var child = astnode[prop];
-
-      if (Array.isArray(child)) {
-        for (var i = 0; i < child.length; i++) {
-          visit(child[i], astnode, prop, i);
-        }
-      }
-      else {
-        visit(child, astnode, prop);
-      }
-    }
-
-    if (astnode.type == "FunctionDeclaration"
-        || astnode.type == "FunctionExpression") {
-
-      currentFuncNode = currentFuncNode.parent;
-    }
-  }
-
-  visit(node);
-
-  return rootnode;
-}
 
 FunctionNode.prototype.printIdentifier = function(identifier) {
 
@@ -646,7 +595,7 @@ FunctionNode.prototype.printAllLexicals = function() {
 FunctionNode.prototype.printAllUnresolved = function() {
 
   var len = this.unresolved.length;
-  if (len == 0) {
+  if (len === 0) {
     console.log("Function Node " + this.uid + " does Not have any unresolved");
     return;
   }
@@ -657,37 +606,7 @@ FunctionNode.prototype.printAllUnresolved = function() {
   }
 };
 
-function prepare(astroot, opt_logftree) {
 
-  populate_parent(astroot);
-
-  var fnroot = build_function_tree(astroot);
-
-  if (opt_logftree === true) {
-    // output ftree after build
-    console.log(JSON.stringify(fnroot, function(key, value) {
-      if (key === "parent") { // suppress circular reference
-        return (value === undefined) ? undefined : value.uid;
-      }
-      else if (key === "astnode") { // supress ast node
-        return undefined;
-      }
-      else {
-        return value;
-      }
-    }, 2));
-  }
-
-  fnode_visit(fnroot, function(fn) {
-    fn.fillIdentifiers();
-    fn.fillArguments();
-    fn.fillLocals();
-    fn.fillLexicals();
-    fn.printAll();
-  });
-
-  return fnroot;
-}
 
 // /////////////////////////////////////////////////////////////////////////////
 
@@ -966,7 +885,8 @@ function compileIdentifier(fn, ast) {
         fn.emit('LITA', 'FRVAR', index);
       }
       else {
-        throw "Identifier: " + ast.name + " not found";
+        console.log("error: identifier: " + ast.name + " not found");
+        throw "error";
       }
     }
   }
@@ -1130,46 +1050,164 @@ function compileFN(fn, silent) {
   fn.emit("RET");
 }
 
-function compile(node, silent) {
+/**
+ * build the function node tree
+ * 
+ * @param node
+ *          must be the root node of ast
+ * @returns root node of function node tree
+ */
+function build_function_tree(node) {
 
-  var i;
-  var fnroot = prepare(node);
+  var rootnode; // the root node of tree
+  var funcnode_uid = 0; // unique id
+  var currentFuncNode; // iterator
+
+  function visit(astnode, parent, prop, idx) {
+
+    var fnode;
+
+    // every ast node has a type property
+    if (!astnode || typeof astnode.type !== "string") {
+      return;
+    }
+
+    if (astnode.type === "Program") {
+
+      fnode = new FunctionNode(funcnode_uid++, astnode, undefined);
+
+      // reverse annotation for debug
+      astnode.fnode = fnode;
+      rootnode = fnode;
+      currentFuncNode = fnode;
+    }
+    else if (astnode.type === "FunctionDeclaration"
+        || astnode.type === "FunctionExpression") {
+
+      fnode = new FunctionNode(funcnode_uid++, astnode, currentFuncNode);
+
+      // reverse annotation for debug
+      astnode.fnode = fnode;
+      currentFuncNode.children.push(fnode);
+      currentFuncNode = fnode;
+    }
+
+    for ( var prop in astnode) {
+      if (astnode.hasOwnProperty(prop)) {
+        if (prop === "__parent__") {
+          continue;
+        }
+
+        var child = astnode[prop];
+        if (Array.isArray(child)) {
+          for (var i = 0; i < child.length; i++) {
+            visit(child[i], astnode, prop, i);
+          }
+        }
+        else {
+          visit(child, astnode, prop);
+        }
+      }
+    }
+
+    if (astnode.type === "FunctionDeclaration"
+        || astnode.type === "FunctionExpression") {
+
+      currentFuncNode = currentFuncNode.parent;
+    }
+  }
+
+  visit(node);
+
+  return rootnode;
+}
+
+function prepare(astroot, opt_logftree) {
+
+  populate_parent(astroot);
+
+  var fnroot = build_function_tree(astroot);
+
+  if (opt_logftree === true) {
+    // output ftree after build
+    console.log(JSON.stringify(fnroot, function(key, value) {
+      if (key === "parent") { // suppress circular reference
+        return (value === undefined) ? undefined : value.uid;
+      }
+      else if (key === "astnode") { // supress ast node
+        return undefined;
+      }
+      else {
+        return value;
+      }
+    }, 2));
+  }
 
   fnode_visit(fnroot, function(fn) {
-    compileFN(fn);
+    fn.fillIdentifiers();
+    fn.fillArguments();
+    fn.fillLocals();
+    fn.fillLexicals();
+    fn.printAll();
   });
 
+  return fnroot;
+}
+
+function merge(fnroot) {
+  
+  var i;
   var array = [];
 
+  // push all function node into array
   fnode_visit(fnroot, function(fn) {
     array.push(fn);
   });
 
+  // sort function node array by uid
   if (array.length > 0) {
     array.sort(function compare(a, b) {
       return a.uid - b.uid;
     });
   }
 
+  // calculate and set code offset to function node
   var offset = 0;
   for (i = 0; i < array.length; i++) {
     array[i].offset = offset;
     offset += array[i].code.length;
   }
 
-  var merge = [];
+  // merge all function node code into one array
+  var merged = [];
   for (i = 0; i < array.length; i++) {
-    merge = merge.concat(array[i].code);
+    merged = merged.concat(array[i].code);
   }
 
   // back patching func address
-  for (i = 0; i < merge.length; i++) {
-    if (merge[i].op === "FUNC") {
-      merge[i].arg1 = merge[i].arg1.offset;
+  for (i = 0; i < merged.length; i++) {
+    if (merged[i].op === "FUNC") {
+      merged[i].arg1 = merged[i].arg1.offset;
     }
   }
+  
+  return merged;
+}
 
-  return merge;
+function compile(node, silent) {
+
+  var i;
+  var fnroot;
+  
+  // stage 1: do annotation
+  fnroot = prepare(node);
+
+  // stage 2: compile all function node
+  fnode_visit(fnroot, function(fn) {
+    compileFN(fn);
+  });
+
+  return merge(fnroot);
 }
 
 exports.compile = compile;

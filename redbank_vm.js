@@ -41,7 +41,37 @@ function RedbankVM() {
 
   this.code = undefined;
   this.testcase = undefined;
+  
+  /**
+   * 
+   */
+  this.global= {};
+  
 }
+
+RedbankVM.prototype.createPrimitive = function(data) {
+  if (data instanceof RegExp) {
+    return this.createRegExp(this.createObject(this.REGEXP), data);
+  }
+  var type = typeof data;
+  var obj = {
+    data: data,
+    isPrimitive: true,
+    type: type,
+    toBoolean: function() {return Boolean(this.data);},
+    toNumber: function() {return Number(this.data);},
+    toString: function() {return String(this.data);},
+    valueOf: function() {return this.data;}
+  };
+  if (type == 'number') {
+    obj.parent = this.NUMBER;
+  } else if (type == 'string') {
+    obj.parent = this.STRING;
+  } else if (type == 'boolean') {
+    obj.parent = this.BOOLEAN;
+  }
+  return obj;
+};
 
 RedbankVM.prototype.alloc_link = function() {
 
@@ -674,12 +704,13 @@ RedbankVM.prototype.printstack = function() {
       }
     }
   }
-}
+};
 
 RedbankVM.prototype.printfreevar = function() {
 
-  if (this.FP === 0)
+  if (this.FP === 0) {
     return;
+  }
 
   var v = this.Stack[this.FP - 1];
 
@@ -713,7 +744,7 @@ RedbankVM.prototype.findLabel = function(code, label) {
   }
 
   throw "Label not found";
-}
+};
 
 RedbankVM.prototype.step = function(code, bytecode) {
   var v, obj;
@@ -1041,7 +1072,7 @@ RedbankVM.prototype.step = function(code, bytecode) {
   default:
     throw "!!! unknown instruction : " + bytecode.op;
   }
-}
+};
 
 RedbankVM.prototype.run = function(input, testcase) {
 
@@ -1076,6 +1107,6 @@ RedbankVM.prototype.run = function(input, testcase) {
   this.printstack();
   this.printfreevar();
   this.assert_no_leak();
-}
+};
 
 module.exports = RedbankVM;
