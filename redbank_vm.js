@@ -41,47 +41,62 @@ function RedbankVM() {
 
   this.code = undefined;
   this.testcase = undefined;
-  
+
   /**
    * 
    */
-  this.global= {};
-  
+  this.GLOBAL = {};
+
+  this.UNDEFINED = this.createPrimitive(undefined);
 }
 
 RedbankVM.prototype.createPrimitive = function(data) {
+
   if (data instanceof RegExp) {
-    return this.createRegExp(this.createObject(this.REGEXP), data);
+    // return this.createRegExp(this.createObject(this.REGEXP), data);
+    throw "RegExp not supported yet";
   }
   var type = typeof data;
   var obj = {
-    data: data,
-    isPrimitive: true,
-    type: type,
-    toBoolean: function() {return Boolean(this.data);},
-    toNumber: function() {return Number(this.data);},
-    toString: function() {return String(this.data);},
-    valueOf: function() {return this.data;}
+    data : data,
+    isPrimitive : true,
+    type : type,
+    toBoolean : function() {
+      return Boolean(this.data);
+    },
+    toNumber : function() {
+      return Number(this.data);
+    },
+    toString : function() {
+      return String(this.data);
+    },
+    valueOf : function() {
+      return this.data;
+    }
   };
-  if (type == 'number') {
+
+  if (type === 'number') {
     obj.parent = this.NUMBER;
-  } else if (type == 'string') {
+  }
+  else if (type === 'string') {
     obj.parent = this.STRING;
-  } else if (type == 'boolean') {
+  }
+  else if (type === 'boolean') {
     obj.parent = this.BOOLEAN;
   }
+
   return obj;
 };
 
 RedbankVM.prototype.alloc_link = function() {
 
   for (var i = 0; i < this.Links.length; i++) {
-    if (this.Links[i] === undefined)
+    if (this.Links[i] === undefined) {
       return i;
+    }
   }
-
   return this.Links.length;
-}
+};
 
 function ObjectObject(vm) {
 
@@ -94,8 +109,9 @@ function ObjectObject(vm) {
 
 ObjectObject.prototype.find_prop = function(name) {
   for (var i = 0; i < this.properties.length; i++) {
-    if (this.properties[i].name === name)
+    if (this.properties[i].name === name) {
       return i;
+    }
   }
 };
 
@@ -160,7 +176,7 @@ function JSVar(type, index) {
  */
 RedbankVM.prototype.TOS = function() {
   return this.Stack[this.Stack.length - 1];
-}
+};
 
 /**
  * Next on stack
@@ -169,14 +185,14 @@ RedbankVM.prototype.TOS = function() {
  */
 RedbankVM.prototype.NOS = function() {
   return this.Stack[this.Stack.length - 2];
-}
+};
 
 /**
  * The 3rd cell on stack
  */
 RedbankVM.prototype.ThirdOS = function() {
   return this.Stack[this.Stack.length - 3];
-}
+};
 
 /**
  * 
@@ -196,9 +212,10 @@ RedbankVM.prototype.assert_no_leak = function() {
 };
 
 RedbankVM.prototype.assert_var_object = function(v) {
-  if (v.type !== VT_OBJ)
+  if (v.type !== VT_OBJ) {
     throw "var is not an object, assert fail";
-}
+  }
+};
 
 /**
  * input is a OBJ var
@@ -206,91 +223,108 @@ RedbankVM.prototype.assert_var_object = function(v) {
  * @param v
  */
 RedbankVM.prototype.assert_var_object_number = function(v) {
-  if (v.type !== VT_OBJ)
+  if (v.type !== VT_OBJ) {
     throw "var is not an object, assert fail";
+  }
 
-  if (this.Objects[v.index].type !== "number")
+  if (this.Objects[v.index].type !== "number") {
     throw "var -> object is not an number, assert fail";
-}
+  }
+};
 
 RedbankVM.prototype.assert_var_object_boolean = function(v) {
-  if (v.type !== VT_OBJ)
+  if (v.type !== VT_OBJ) {
     throw "var is not an object, assert fail";
+  }
 
-  if (this.Objects[v.index].type !== "boolean")
+  if (this.Objects[v.index].type !== "boolean") {
     throw "var -> object is not a boolean, assert fail";
-}
+  }
+};
 
 RedbankVM.prototype.getval_var_object_boolean = function(v) {
 
   this.assert_var_object_boolean(v);
   return this.Objects[v.index].value;
-}
+};
 
 RedbankVM.prototype.assert_var_object_object = function(v) {
-  if (v.type !== VT_OBJ)
+  if (v.type !== VT_OBJ) {
     throw "var is not an object, assert fail";
-  if (this.Objects[v.index].type !== "object")
+  }
+  if (this.Objects[v.index].type !== "object") {
     throw "var -> object is not an object object assert fail";
-}
+  }
+};
 
 RedbankVM.prototype.assert_var_addr = function(v) {
   if (v.type === VT_LOC || v.type === VT_ARG || v.type === VT_FRV
-      || v.type === VT_PRO)
+      || v.type === VT_PRO) {
     return;
-  else
+  }
+  else {
     throw "var is not an address, assert fail";
-}
+  }
+};
 
 RedbankVM.prototype.assert_var_addr_local = function(v) {
-  if (v.type === VT_LOC)
+  if (v.type === VT_LOC) {
     return;
-  else
+  }
+  else {
     throw "var is not an local address";
-}
+  }
+};
 
 RedbankVM.prototype.assert_var_addr_param = function(v) {
-  if (v.type === VT_ARG)
+  if (v.type === VT_ARG) {
     return;
-  else
+  }
+  else {
     throw "var is not an param address";
-}
+  }
+};
 
 RedbankVM.prototype.assert_var_addr_frvar = function(v) {
-  if (v.type === VT_FRV)
+  if (v.type === VT_FRV) {
     return;
-  else
+  }
+  else {
     throw "var is not an freevar address";
-}
+  }
+};
 
 RedbankVM.prototype.assert_var_addr_prop = function(v) {
-  if (v.type === VT_PRO)
+  if (v.type === VT_PRO) {
     return;
-  else
+  }
+  else {
     throw "var is not an property address";
-}
+  }
+};
 
 /**
  * for external auto test
  */
 RedbankVM.prototype.assert = function(expr) {
-  if (!(expr))
+  if (!(expr)) {
     throw "ASSERT FAIL";
-}
+  }
+};
 
 RedbankVM.prototype.assertStackLengthEqual = function(len) {
-
-  this.assert(this.Stack.length == len);
-}
+  this.assert(this.Stack.length === len);
+};
 
 RedbankVM.prototype.assertStackSlotUndefined = function(slot) {
 
   this.assert(this.Stack.length > slot);
   this.assert(this.Stack[slot].type === "Object");
   this.assert(this.Stack[slot].index === 0);
-}
+};
 
 RedbankVM.prototype.assertStackSlotNumberValue = function(slot, val) {
+
   this.assert(this.Stack.length > slot);
   this.assert(this.Stack[slot].type === "Object");
 
@@ -298,7 +332,7 @@ RedbankVM.prototype.assertStackSlotNumberValue = function(slot, val) {
 
   this.assert(this.Objects[objIndex].type === "number");
   this.assert(this.Objects[objIndex].value === val);
-}
+};
 
 function verify_vartype_parameter() {
 
@@ -317,11 +351,12 @@ function verify_vartype() {
 }
 
 RedbankVM.prototype.object_ref_incr = function(index) {
-  if (index === 0)
+  if (index === 0) {
     return;
+  }
 
   this.Objects[index].ref++;
-}
+};
 
 /**
  * Decrement object's reference count
@@ -333,8 +368,12 @@ RedbankVM.prototype.object_ref_incr = function(index) {
  */
 RedbankVM.prototype.object_ref_decr = function(index) {
 
-  if (index === 0)
+  var i;
+
+  if (index === 0) {
     return;
+  }
+
   this.Objects[index].ref--;
 
   if (this.Objects[index].ref === 0) {
@@ -342,23 +381,23 @@ RedbankVM.prototype.object_ref_decr = function(index) {
     var obj = this.Objects[index];
 
     if (obj.type === "function") {
-      for (var i = 0; i < obj.freevars.length; i++) {
+      for (i = 0; i < obj.freevars.length; i++) {
         this.link_ref_decr(obj.freevars[i].index);
       }
     }
     else if (obj.type === "object") {
-      for (var i = 0; i < obj.properties.length; i++) {
+      for (i = 0; i < obj.properties.length; i++) {
         this.object_ref_decr(obj.properties[i].index);
       }
     }
 
     this.Objects[index] = undefined;
   }
-}
+};
 
 RedbankVM.prototype.link_ref_incr = function(index) {
   this.Links[index].ref++;
-}
+};
 
 /**
  * Decrement link's reference count
@@ -377,7 +416,7 @@ RedbankVM.prototype.link_ref_decr = function(index) {
     this.object_ref_decr(this.Links[index].object);
     this.Links[index] = undefined;
   }
-}
+};
 
 /**
  * Get the freevar array of current function
@@ -386,13 +425,14 @@ RedbankVM.prototype.link_ref_decr = function(index) {
  */
 RedbankVM.prototype.freevars = function() {
 
-  if (this.FP === 0)
+  if (this.FP === 0) {
     throw "main function has no freevars";
+  }
 
   var v = this.Stack[this.FP - 1]; // jsvar for Function Object
   v = this.Objects[v.index]; // function object
   return v.freevars;
-}
+};
 
 function check_reference_chain() {
 
@@ -407,7 +447,7 @@ function check_reference_chain() {
  */
 RedbankVM.prototype.lid2sid = function(lid) {
   return this.FP + lid;
-}
+};
 
 /**
  * Get current function's argument count
@@ -664,7 +704,7 @@ RedbankVM.prototype.printstack = function() {
     console.log("STACK size: " + this.Stack.length);
     for (var i = this.Stack.length - 1; i >= 0; i--) {
       var v = this.Stack[i];
-      if (v.type == VT_OBJ) {
+      if (v.type === VT_OBJ) {
         var index = v.index;
         var obj = this.Objects[index];
 
@@ -714,33 +754,37 @@ RedbankVM.prototype.printfreevar = function() {
 
   var v = this.Stack[this.FP - 1];
 
-  if (v.type !== VT_OBJ || this.Objects[v.index].type !== "function")
+  if (v.type !== VT_OBJ || this.Objects[v.index].type !== "function") {
     throw "error, function object not found!";
+  }
 
   v = this.Objects[v.index];
 
-  if (v.freevars.length === 0)
+  if (v.freevars.length === 0) {
     return;
+  }
 
   console.log("  --- freevars ---");
 
   for (var i = 0; i < v.freevars.length; i++) {
 
     var f = v.freevars[i];
-    if (f.type !== VT_LNK)
+    if (f.type !== VT_LNK) {
       throw "error freevar type";
+    }
 
     console.log(i + " : " + "link id: " + f.index + ", ref: "
         + this.Links[f.index].ref + ", obj: " + this.Links[f.index].object);
   }
-}
+};
 
 RedbankVM.prototype.findLabel = function(code, label) {
 
   for (var i = 0; i < code.length; i++) {
     var bytecode = this.code[i];
-    if (bytecode.op === "LABEL" && bytecode.arg1 === label)
+    if (bytecode.op === "LABEL" && bytecode.arg1 === label) {
       return i;
+    }
   }
 
   throw "Label not found";
@@ -771,7 +815,7 @@ RedbankVM.prototype.step = function(code, bytecode) {
       else {
         v = this.Stack[this.lid2sid(bytecode.arg2)];
       }
-
+      
       if (v.type === VT_LNK) {
         f.freevars.push(new JSVar(VT_LNK, v.index));
         this.Links[v.index].ref++;
@@ -791,11 +835,13 @@ RedbankVM.prototype.step = function(code, bytecode) {
 
         f.freevars.push(new JSVar(VT_LNK, id));
       }
-      else
-        throw "ERROR";
+      else {
+        throw "error";
+      }
     }
     else if (bytecode.arg1 === "lexical") {
       // copy link id and incr reference count
+      throw "not implemented yet";
     }
     else {
       throw "error capture from type : " + bytecode.arg1;
@@ -810,35 +856,34 @@ RedbankVM.prototype.step = function(code, bytecode) {
     var addr = this.Stack.pop();
     if (addr.type === VT_LOC) {
       v = this.Stack[this.lid2sid(addr.index)];
-      if (v.type === VT_OBJ) {
-      }
-      else if (v.type === VT_LNK) {
-        v = new JSVar(VT_OBJ, this.Links[v.index].object);
-      }
-      else
-        throw "Unsupported var type in local slot";
-    }
-    else if (addr.type === VT_ARG) {
-      v = this.Stack[this.pid2sid(addr.index)];
-      if (v.type === VT_OBJ) {
-      }
-      else if (v.type === VT_LNK) {
-        v = new JSVar(VT_OBJ, this.Links[v.index].object);
-      }
-      else
-        throw "Unsupported var type in param slot";
-    }
-    else if (addr.type === VT_FRV) {
-      v = this.freevars()[addr.index] // freevar
       if (v.type === VT_LNK) {
         v = new JSVar(VT_OBJ, this.Links[v.index].object);
       }
-      else
+      else if (v.type !== VT_OBJ) {
+        throw "Unsupported var type in local slot";
+      }
+    }
+    else if (addr.type === VT_ARG) {
+      v = this.Stack[this.pid2sid(addr.index)];
+      if (v.type === VT_LNK) {
+        v = new JSVar(VT_OBJ, this.Links[v.index].object);
+      }
+      else if (v.type !== VT_OBJ) {
+        throw "Unsupported var type in param slot";
+      }
+    }
+    else if (addr.type === VT_FRV) {
+      v = this.freevars()[addr.index]; // freevar
+      if (v.type === VT_LNK) {
+        v = new JSVar(VT_OBJ, this.Links[v.index].object);
+      }
+      else {
         throw "Unsupported var type in frvar slot";
+      }
     }
     else if (addr.type === VT_PRO) {
 
-      var obj = this.Objects[this.TOS().index];
+      obj = this.Objects[this.TOS().index];
       var propIndex = obj.find_prop(addr.index);
       if (propIndex === undefined) {
         v = new JSVar(VT_OBJ, 0);
@@ -851,8 +896,9 @@ RedbankVM.prototype.step = function(code, bytecode) {
       // object may be delete.
 
     }
-    else
+    else {
       throw "not supported yet.";
+    }
     this.push(v);
     break;
 
@@ -902,8 +948,9 @@ RedbankVM.prototype.step = function(code, bytecode) {
       v = new JSVar(VT_PRO, bytecode.arg2);
       this.Stack.push(v);
     }
-    else
+    else {
       throw "not supported yet";
+    }
 
     break;
 
@@ -961,7 +1008,7 @@ RedbankVM.prototype.step = function(code, bytecode) {
     }
     else {
 
-      var result = undefined;
+      var result;
       var argc = this.ARGC();
 
       if (bytecode.arg1 === "RESULT") {
@@ -994,11 +1041,6 @@ RedbankVM.prototype.step = function(code, bytecode) {
 
   case "STORE": // addr n1 --
     this.store();
-    break;
-
-  case "VAL":
-    v = new JSVar(VT_VAL, bytecode.arg1);
-    this.Stack.push(v);
     break;
 
   case "+":

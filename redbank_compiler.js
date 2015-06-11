@@ -27,6 +27,13 @@ var expectRValue = [ {
   prop : "init"
 } ];
 
+// function exprIsRValue(ast) {
+//  
+// var parent = ast.__parent__;
+// var type =
+//  
+// }
+
 /**
  * This function tells if current expr should be evaluated as address or value
  * 
@@ -52,44 +59,46 @@ function exprAsVal(expr) {
 
   }
   else if (pt === "MemberExpression") {
-    if (expr === parent.object)
+    if (expr === parent.object) {
       return true;
-    else if (expr === parent.property)
+    }
+    else if (expr === parent.property) {
       return false;
-    else
+    }
+    else {
       throw "Unknown role for " + pt;
+    }
   }
   else if (pt === "BinaryExpression") {
     return true;
-
   }
   else if (pt === "VariableDeclarator") {
-    if (expr === parent.id)
+    if (expr === parent.id) {
       return false;
-    else if (expr === parent.init)
+    }
+    else if (expr === parent.init) {
       return true;
-    else
+    }
+    else {
       throw "error";
-
-    // interface CallExpression <: Expression {
-    // type: "CallExpression";
-    // callee: Expression;
-    // arguments: [ Expression ];
-    // }
+    }
   }
   else if (pt === "CallExpression") {
     return true; // TODO need check error
   }
   else if (pt === "ReturnStatement") {
-    if (expr === parent.argument)
+    if (expr === parent.argument) {
       return true;
-    else
+    }
+    else {
       throw "error";
+    }
 
   }
-  else
+  else {
     throw "exprAsVal: " + pt + " not supported yet";
-};
+  }
+}
 
 /**
  * Visit function node, apply pre or post on node
@@ -289,7 +298,7 @@ FunctionNode.prototype.fillIdentifiers = function() {
   function visit(astnode) {
 
     var identifier;
-    var name;
+    var name, prop, i;
 
     if (astnode.type === "Identifier") {
 
@@ -306,10 +315,10 @@ FunctionNode.prototype.fillIdentifiers = function() {
             continue;
           }
 
-          var prop = parent[name];
+          prop = parent[name];
           if (prop && typeof prop === 'object') {
             if (Array.isArray(prop) === true) {
-              for (var i = 0; i < prop.length; i++) {
+              for (i = 0; i < prop.length; i++) {
                 if (prop[i] === astnode) {
                   identifier.prop_name = name;
                   identifier.prop_index = i;
@@ -348,25 +357,26 @@ FunctionNode.prototype.fillIdentifiers = function() {
 
     // recursive
     for (name in astnode) {
-
-      if (name === "__parent__" || name === "fnode") {
-        continue;
-      }
-
-      var prop = astnode[name];
-      if (prop && typeof prop === 'object') {
-        if (typeof prop.length === 'number' && prop.splice) {
-          // Prop is an array.
-          for (var i = 0; i < prop.length; i++) {
-            visit(prop[i]);
-          }
+      if (astnode.hasOwnProperty(name)) {
+        if (name === "__parent__" || name === "fnode") {
+          continue;
         }
-        else {
-          visit(prop);
+
+        prop = astnode[name];
+        if (prop && typeof prop === 'object') {
+          if (typeof prop.length === 'number' && prop.splice) {
+            // Prop is an array.
+            for (i = 0; i < prop.length; i++) {
+              visit(prop[i]);
+            }
+          }
+          else {
+            visit(prop);
+          }
         }
       }
     }
-  }
+  } // End of function Visit
 
   if (this.astnode.type === "Program") {
     visit(this.astnode);
@@ -636,75 +646,75 @@ FunctionNode.prototype.printAllUnresolved = function() {
 // left: Pattern;
 // right: Expression;
 // }
-function compileAssignmentExpression(fn, ast) {
-  compileAST(fn, ast.left);
-  compileAST(fn, ast.right);
-  fn.emit('=');
-}
+FunctionNode.prototype.compileAssignmentExpression = function(ast) {
+  this.compileAST(ast.left);
+  this.compileAST(ast.right);
+  this.emit('=');
+};
 
-function compileAST(fn, ast, silent) {
+FunctionNode.prototype.compileAST = function(ast, silent) {
 
   indent_incr();
 
   switch (ast.type) {
   case "AssignmentExpression":
-    compileAssignmentExpression(fn, ast);
+    this.compileAssignmentExpression(ast);
     break;
 
   case "BinaryExpression":
-    compileBinaryExpression(fn, ast);
+    this.compileBinaryExpression(ast);
     break;
 
   case "BlockStatement":
-    compileBlockStatement(fn, ast);
+    this.compileBlockStatement(ast);
     break;
 
   case "CallExpression":
-    compileCallExpression(fn, ast);
+    this.compileCallExpression(ast);
     break;
 
   case "ExpressionStatement":
-    compileExpressionStatement(fn, ast);
+    this.compileExpressionStatement(ast);
     break;
 
   case "FunctionExpression":
-    compileFunctionExpression(fn, ast);
+    this.compileFunctionExpression(ast);
     break;
 
   case "Identifier":
-    compileIdentifier(fn, ast);
+    this.compileIdentifier(ast);
     break;
 
   case "IfStatement":
-    compileIfStatement(fn, ast);
+    this.compileIfStatement(ast);
     break;
 
   case "Literal":
-    compileLiteral(fn, ast);
+    this.compileLiteral(ast);
     break;
 
   case "MemberExpression":
-    compileMemberExpression(fn, ast);
+    this.compileMemberExpression(ast);
     break;
 
   case "ObjectExpression":
-    compileObjectExpression(fn, ast);
+    this.compileObjectExpression(ast);
     break;
 
   case "Program":
-    compileProgram(fn, ast);
+    this.compileProgram(ast);
     break;
 
   case "ReturnStatement":
-    compileReturnStatement(fn, ast);
+    this.compileReturnStatement(ast);
     break;
 
   case "VariableDeclaration":
-    compileVariableDeclaration(fn, ast);
+    this.compileVariableDeclaration(ast);
     break;
 
   case "VariableDeclarator":
-    compileVariableDeclarator(fn, ast);
+    this.compileVariableDeclarator(ast);
     break;
 
   default:
@@ -714,7 +724,7 @@ function compileAST(fn, ast, silent) {
   // TODO
   astlog("}");
   indent_decr();
-}
+};
 
 // interface BinaryExpression <: Expression {
 // type: "BinaryExpression";
@@ -722,46 +732,45 @@ function compileAST(fn, ast, silent) {
 // left: Expression;
 // right: Expression;
 // }
-function compileBinaryExpression(fn, ast) {
+FunctionNode.prototype.compileBinaryExpression = function(ast) {
 
-  compileAST(fn, ast.left);
-  compileAST(fn, ast.right);
+  this.compileAST(ast.left);
+  this.compileAST(ast.right);
 
   switch (ast.operator) {
   case '+':
-    fn.emit('+');
+    this.emit('+');
     break;
 
   case '*':
-    fn.emit('*');
+    this.emit('*');
     break;
 
   case "===":
-    fn.emit('===');
+    this.emit('===');
     break;
 
   default:
     throw "unsupported binary operator";
   }
-
-}
+};
 
 // interface BlockStatement <: Statement {
 // type: "BlockStatement";
 // body: [ Statement ];
 // }
-function compileBlockStatement(fn, ast) {
+FunctionNode.prototype.compileBlockStatement = function(ast) {
   for (var i = 0; i < ast.body.length; i++) {
-    compileAST(fn, ast.body[i]);
+    this.compileAST(ast.body[i]);
   }
-}
+};
 
 // interface CallExpression <: Expression {
 // type: "CallExpression";
 // callee: Expression;
 // arguments: [ Expression ];
 // }
-function compileCallExpression(fn, ast) {
+FunctionNode.prototype.compileCallExpression = function(ast) {
 
   if (USE_RB_TEST && ast.callee.type === "Identifier"
       && ast.callee.name === "rb_test") {
@@ -770,29 +779,29 @@ function compileCallExpression(fn, ast) {
       throw "Incorrect rb_test usage";
     }
 
-    fn.emit("TEST", ast.arguments[0].value);
-    fn.emit("LITN", 1);
+    this.emit("TEST", ast.arguments[0].value);
+    this.emit("LITN", 1);
     return;
   }
 
   // put arguments
   for (var i = 0; i < ast.arguments.length; i++) {
-    compileAST(fn, ast.arguments[i]);
+    this.compileAST(ast.arguments[i]);
   }
 
   // put argc
-  fn.emit("LITC", ast.arguments.length);
+  this.emit("LITC", ast.arguments.length);
 
   // put this
   // TODO pretend undefined now
-  fn.emit("LITN", 1);
+  this.emit("LITN", 1);
 
   // put callee, may evaluate to lvalue
-  compileAST(fn, ast.callee);
+  this.compileAST(ast.callee);
 
   // do call
-  fn.emit("CALL");
-}
+  this.emit("CALL");
+};
 
 // interface ConditionalExpression <: Expression {
 // type: "ConditionalExpression";
@@ -800,19 +809,18 @@ function compileCallExpression(fn, ast) {
 // alternate: Expression;
 // consequent: Expression;
 // }
-function compileConditionalExpression(fn, ast) {
+FunctionNode.prototype.compileConditionalExpression = function(ast) {
   throw "error";
-}
+};
 
-function compileExpressionStatement(fn, ast) {
-  // interface ExpressionStatement <: Statement {
-  // type: "ExpressionStatement";
-  // expression: Expression;
-  // }
-
-  compileAST(fn, ast.expression);
-  fn.emit("DROP");
-}
+// interface ExpressionStatement <: Statement {
+// type: "ExpressionStatement";
+// expression: Expression;
+// }
+FunctionNode.prototype.compileExpressionStatement = function(ast) {
+  this.compileAST(ast.expression);
+  this.emit("DROP");
+};
 
 // interface FunctionDeclaration <: Function, Declaration {
 // type: "FunctionDeclaration";
@@ -824,9 +832,9 @@ function compileExpressionStatement(fn, ast) {
 // generator: boolean;
 // expression: boolean;
 // }
-function compileFunctionDeclaration(fn, ast) {
-  throw "error"
-}
+FunctionNode.prototype.compileFunctionDeclaration = function(ast) {
+  throw "error";
+};
 
 // interface FunctionExpression <: Function, Expression {
 // type: "FunctionExpression";
@@ -838,53 +846,50 @@ function compileFunctionDeclaration(fn, ast) {
 // generator: boolean;
 // expression: boolean;
 // }
-function compileFunctionExpression(fn, ast) {
+FunctionNode.prototype.compileFunctionExpression = function(ast) {
 
   var sub_fn = ast.fnode;
   var l = sub_fn.lexicals.length;
 
   // replace with offset in backpatching
-  fn.emit('FUNC', sub_fn, l);
+  this.emit('FUNC', sub_fn, l);
 
   for (var i = 0; i < l; i++) {
-    fn.emit("CAPTURE", sub_fn.lexicals[i].from, sub_fn.lexicals[i].slot);
+    this.emit("CAPTURE", sub_fn.lexicals[i].from, sub_fn.lexicals[i].slot);
   }
-}
+};
 
 // interface Identifier <: Node, Expression, Pattern {
 // type: "Identifier";
 // name: string;
 // }
-function compileIdentifier(fn, ast) {
+FunctionNode.prototype.compileIdentifier = function(ast) {
 
   var i;
   if (ast.__parent__.type === "MemberExpression") {
-    if (ast === ast.__parent__.object) {
-      // find identifier in scope
-    }
-    else if (ast === ast.__parent__.property) {
+    if (ast === ast.__parent__.property) {
       // treat identifier as operator
-      fn.emit("LITA", "PROP", ast.name);
+      this.emit("LITA", "PROP", ast.name);
       return;
     }
   }
 
   // var index = find_name_in_params(fn, ast.name);
-  var index = fn.findNameInArguments(ast.name);
+  var index = this.findNameInArguments(ast.name);
   if (index !== undefined) {
-    fn.emit('LITA', 'PARAM', index);
+    this.emit('LITA', 'PARAM', index);
   }
   else {
     // index = find_name_in_locals(fn, ast.name);
-    index = fn.findNameInLocals(ast.name);
+    index = this.findNameInLocals(ast.name);
     if (index !== undefined) {
-      fn.emit('LITA', 'LOCAL', index);
+      this.emit('LITA', 'LOCAL', index);
     }
     else {
       // index = find_name_in_freevars(fn, ast.name);
-      index = fn.findNameInLexicals(ast.name);
+      index = this.findNameInLexicals(ast.name);
       if (index !== undefined) {
-        fn.emit('LITA', 'FRVAR', index);
+        this.emit('LITA', 'FRVAR', index);
       }
       else {
         console.log("error: identifier: " + ast.name + " not found");
@@ -894,9 +899,9 @@ function compileIdentifier(fn, ast) {
   }
 
   if (exprAsVal(ast)) {
-    fn.emit("FETCH");
+    this.emit("FETCH");
   }
-}
+};
 
 // interface IfStatement <: Statement {
 // type: "IfStatement";
@@ -904,36 +909,36 @@ function compileIdentifier(fn, ast) {
 // consequent: Statement;
 // alternate: Statement | null;
 // }
-function compileIfStatement(fn, ast) {
+FunctionNode.prototype.compileIfStatement = function(ast) {
 
-  var begin = fn.compiler.newLabel();
-  var after = fn.compiler.newLabel();
-  var t = fn.compiler.newLabel();
-  var f = fn.compiler.newLabel();
+  var begin = this.compiler.newLabel();
+  var after = this.compiler.newLabel();
+  var t = this.compiler.newLabel();
+  var f = this.compiler.newLabel();
 
-  fn.emitLabel(begin);
-  compileAST(fn, ast.test);
-  fn.emitJUMPC(t, f);
+  this.emitLabel(begin);
+  this.compileAST(ast.test);
+  this.emitJUMPC(t, f);
 
-  fn.emitLabel(t);
-  compileAST(fn, ast.consequent);
-  fn.emitJUMP(after);
+  this.emitLabel(t);
+  this.compileAST(ast.consequent);
+  this.emitJUMP(after);
 
-  fn.emitLabel(f);
+  this.emitLabel(f);
   if (ast.alternate !== null) {
-    compileAST(fn, ast.alternate);
+    this.compileAST(ast.alternate);
   }
-  fn.emitJUMP(after);
-  fn.emitLabel(after);
-}
+  this.emitJUMP(after);
+  this.emitLabel(after);
+};
 
 // interface Literal <: Node, Expression {
 // type: "Literal";
 // value: string | boolean | null | number | RegExp;
 // }
-function compileLiteral(fn, ast) {
-  fn.emit("LITC", ast.value);
-}
+FunctionNode.prototype.compileLiteral = function(ast) {
+  this.emit("LITC", ast.value);
+};
 
 // interface MemberExpression <: Expression {
 // type: "MemberExpression";
@@ -941,71 +946,70 @@ function compileLiteral(fn, ast) {
 // property: Identifier | Expression;
 // computed: boolean;
 // }
-function compileMemberExpression(fn, ast) {
-  compileAST(fn, ast.object);
-  compileAST(fn, ast.property);
+FunctionNode.prototype.compileMemberExpression = function(ast) {
+  this.compileAST(ast.object);
+  this.compileAST(ast.property);
   if (exprAsVal(ast)) {
-    fn.emit("FETCH");
+    this.emit("FETCH");
   }
-}
+};
 
 // interface ObjectExpression <: Expression {
 // type: "ObjectExpression";
 // properties: [ Property ];
 // }
-function compileObjectExpression(fn, ast) {
-  fn.emit("LITO");
-}
+FunctionNode.prototype.compileObjectExpression = function(ast) {
+  this.emit("LITO");
+};
 
-function compileProgram(fn, ast) {
-  // interface Program <: Node {
-  // type: "Program";
-  // body: [ Statement ];
-  // }
+// interface Program <: Node {
+// type: "Program";
+// body: [ Statement ];
+// }
+FunctionNode.prototype.compileProgram = function(ast) {
   for (var i = 0; i < ast.body.length; i++) {
-    compileAST(fn, ast.body[i]);
+    this.compileAST(ast.body[i]);
   }
-}
+};
 
-function compileReturnStatement(fn, ast) {
-  // interface ReturnStatement <: Statement {
-  // type: "ReturnStatement";
-  // argument: Expression | null;
-  // }
+// interface ReturnStatement <: Statement {
+// type: "ReturnStatement";
+// argument: Expression | null;
+// }
+FunctionNode.prototype.compileReturnStatement = function(ast) {
   if (ast.argument === null) {
-    fn.emit("RET");
+    this.emit("RET");
   }
   else {
-    compileAST(fn, ast.argument);
-    fn.emit("RET", "RESULT");
+    this.compileAST(ast.argument);
+    this.emit("RET", "RESULT");
   }
-}
+};
 
 // interface VariableDeclaration <: Declaration {
 // type: "VariableDeclaration";
 // declarations: [ VariableDeclarator ];
 // kind: "var" | "let" | "const";
 // }
-function compileVariableDeclaration(fn, ast) {
+FunctionNode.prototype.compileVariableDeclaration = function(ast) {
   for (var i = 0; i < ast.declarations.length; i++) {
-    compileAST(fn, ast.declarations[i]);
+    this.compileAST(ast.declarations[i]);
   }
-}
+};
 
-function compileVariableDeclarator(fn, ast) {
-
-  // interface VariableDeclarator <: Node {
-  // type: "VariableDeclarator";
-  // id: Pattern;
-  // init: Expression | null;
-  // }
+// interface VariableDeclarator <: Node {
+// type: "VariableDeclarator";
+// id: Pattern;
+// init: Expression | null;
+// }
+FunctionNode.prototype.compileVariableDeclarator = function(ast) {
 
   if (ast.init !== null) {
     var i;
     var found = false;
 
-    for (i = 0; i < fn.localvars.length; ++i) {
-      if (fn.localvars[i].name === ast.id.name) {
+    for (i = 0; i < this.localvars.length; ++i) {
+      if (this.localvars[i].name === ast.id.name) {
         found = true;
         break;
       }
@@ -1015,42 +1019,42 @@ function compileVariableDeclarator(fn, ast) {
       throw "var name " + ast.id.name + " not found!";
     }
 
-    fn.emit('LITA', 'LOCAL', i);
-    compileAST(fn, ast.init);
-    fn.emit("STORE");
+    this.emit('LITA', 'LOCAL', i);
+    this.compileAST(ast.init);
+    this.emit("STORE");
   }
-}
+};
 
 /**
  * compile a function node
  * 
  * @param fn
  */
-function compileFN(fn, silent) {
+FunctionNode.prototype.compileFN = function(silent) {
 
   if (silent === false) {
-    console.log("compileFN : " + fn.uid);
+    console.log("compileFN : " + this.uid);
   }
 
-  fn.emit("LITN", fn.localvars.length);
+  this.emit("LITN", this.localvars.length);
 
-  if (fn.astnode.type === "Program") {
-    compileAST(fn, fn.astnode, silent);
+  if (this.astnode.type === "Program") {
+    this.compileAST(this.astnode, silent);
   }
-  else if (fn.astnode.type === "FunctionDeclaration"
-      || fn.astnode.type === "FunctionExpression") {
-    compileAST(fn, fn.astnode.body, silent);
+  else if (this.astnode.type === "FunctionDeclaration"
+      || this.astnode.type === "FunctionExpression") {
+    this.compileAST(this.astnode.body, silent);
   }
   else {
     throw "Unexpected fnode ast type";
   }
 
-  if (fn.code.length > 0 && fn.code[fn.code.length - 1].op === "RET") {
+  if (this.code.length > 0 && this.code[this.code.length - 1].op === "RET") {
     return;
   }
 
-  fn.emit("RET");
-}
+  this.emit("RET");
+};
 
 function Compiler() {
   this.label = 0;
@@ -1058,7 +1062,7 @@ function Compiler() {
 
 Compiler.prototype.newLabel = function() {
   return this.label++;
-}
+};
 
 var Compiler = new Compiler();
 
@@ -1075,7 +1079,7 @@ function build_function_tree(node) {
   var funcnode_uid = 0; // unique id
   var currentFuncNode; // iterator
 
-  function visit(astnode, parent, prop, idx) {
+  function visit(astnode, parent) {
 
     var fnode;
 
@@ -1114,11 +1118,11 @@ function build_function_tree(node) {
         var child = astnode[prop];
         if (Array.isArray(child)) {
           for (var i = 0; i < child.length; i++) {
-            visit(child[i], astnode, prop, i);
+            visit(child[i], astnode);
           }
         }
         else {
-          visit(child, astnode, prop);
+          visit(child, astnode);
         }
       }
     }
@@ -1128,7 +1132,7 @@ function build_function_tree(node) {
 
       currentFuncNode = currentFuncNode.parent;
     }
-  }
+  } // End of visit
 
   visit(node);
 
@@ -1217,7 +1221,7 @@ function compile(node, silent) {
 
   // stage 2: compile all function node
   fnode_visit(fnroot, function(fn) {
-    compileFN(fn);
+    fn.compileFN();
   });
 
   return merge(fnroot);
