@@ -147,7 +147,7 @@ function assert_object_property_number_value(vm, objIndex, prop, val) {
   var obj = vm.Objects[objIndex];
   assert(obj.type === "object");
 
-  var propIndex = obj.find_prop(prop);
+  var propIndex = vm.findProperty(obj, prop);
   assert(propIndex !== undefined);
 
   var propObjIndex = obj.properties[propIndex].index;
@@ -821,9 +821,16 @@ function emit_as_tcp_client(testcase) {
 }
 
 run_testsuite(TESTS);
-// run_single_in_suite(TESTS, "basic", "var_declare_dual");
+// run_single_in_suite(TESTS, "func", "func_declare_init");
 
 // emit_as_tcp_client(TESTS["basic"]["var_declare_dual"]);
 
 // var runner = new SocketTestRunner(TESTS, "basic");
 // runner.startTcpClient();
+
+
+
+//var source = ""; 
+//var interpreter = JSInterpreter.BuildInterpreter(source);
+//interpreter.run();
+
