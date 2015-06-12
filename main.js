@@ -147,7 +147,7 @@ function assert_object_property_number_value(vm, objIndex, prop, val) {
   var obj = vm.Objects[objIndex];
   assert(obj.type === "object");
 
-  var propIndex = vm.findProperty(obj, prop);
+  var propIndex = vm.findProperty(objIndex, prop);
   assert(propIndex !== undefined);
 
   var propObjIndex = obj.properties[propIndex].index;
@@ -821,7 +821,7 @@ function emit_as_tcp_client(testcase) {
 }
 
 run_testsuite(TESTS);
-// run_single_in_suite(TESTS, "func", "func_declare_init");
+// run_single_in_suite(TESTS, "object", "object_member_expr_fetch");
 
 // emit_as_tcp_client(TESTS["basic"]["var_declare_dual"]);
 

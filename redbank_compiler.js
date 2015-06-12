@@ -848,14 +848,14 @@ FunctionNode.prototype.compileFunctionDeclaration = function(ast) {
 // }
 FunctionNode.prototype.compileFunctionExpression = function(ast) {
 
-  var sub_fn = ast.fnode;
-  var l = sub_fn.lexicals.length;
+  var fn = ast.fnode;
+  var lexnum = fn.lexicals.length;
 
   // replace with offset in backpatching
-  this.emit('FUNC', sub_fn, l);
+  this.emit('FUNC', fn, lexnum, ast.params.length);
 
-  for (var i = 0; i < l; i++) {
-    this.emit("CAPTURE", sub_fn.lexicals[i].from, sub_fn.lexicals[i].slot);
+  for (var i = 0; i < lexnum; i++) {
+    this.emit("CAPTURE", fn.lexicals[i].from, fn.lexicals[i].slot);
   }
 };
 

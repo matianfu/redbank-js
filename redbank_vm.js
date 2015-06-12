@@ -62,14 +62,13 @@ function RedbankVM() {
 
   this.Stack = [];
   this.Objects = [];
-  this.Links = []; // should be removed
+  this.Links = []; // TODO should be removed
 
+  // string hash table
   this.StringHash = [];
 
   this.code = undefined;
   this.testcase = undefined;
-
-  this.UNDEFINED = this.createPrimitive(undefined);
 }
 
 RedbankVM.prototype.register = function(obj) {
@@ -91,15 +90,21 @@ RedbankVM.prototype.register = function(obj) {
  *         otherwise.
  */
 RedbankVM.prototype.isa = function(child, parent) {
-
-  if (!child || !parent) {
+  
+  if (typeof child !== 'number' || typeof parent !== 'number') {
+    throw "wrong input";
+  }
+  
+  if (child === 0) {
     return false;
   }
-  if (child.PROTOTYPE === parent) {
+
+  if (this.Objects[child].PROTOTYPE === parent) {
     return true;
   }
 
-  child = child.PROTOTYPE;
+  child = this.Objects[child].PROTOTYPE;
+  
   return this.isa(child, parent);
 };
 
@@ -111,57 +116,6 @@ RedbankVM.prototype.alloc_link = function() {
     }
   }
   return this.Links.length;
-};
-
-/**
- * Create a primitive value
- * 
- * @param value
- * @returns {___anonymous2279_2364}
- */
-RedbankVM.prototype.createPrimitive = function(value) {
-
-  // check if value is js primitive
-  function isPrimitive(value) {
-    if (value === null || // ECMAScript bug according to MDN
-    typeof value === 'string' || typeof value === 'number'
-        || typeof value === 'boolean' || typeof value === 'undefined') {
-      return true;
-    }
-  }
-
-  if (isPrimitive(value) !== true) {
-    throw "value is NOT primitive";
-  }
-
-  var primitive = {
-    isPrimitive : true,
-    type : typeof value,
-    value : value,
-
-    ref : 0,
-  };
-
-  // if (typeof value === 'string') {
-  //    
-  // var hash = fnv32a(primitive.value);
-  // primitive.hash = hash;
-  //    
-  // var id = this.findString(value, hash);
-  //    
-  // if (id === undefined) { // new string
-  // // create new string
-  //      
-  // return;
-  // }
-  // else {
-  // hash = hash >>> 20;
-  // var node = new StringNode()
-  // StringHash[]
-  // }
-  // }
-
-  return primitive;
 };
 
 RedbankVM.prototype.findString = function(string, hash) {
@@ -188,15 +142,73 @@ RedbankVM.prototype.findString = function(string, hash) {
       return node.id;
     }
   }
-}
+};
 
-RedbankVM.prototype.createObject = function(proto) {
+/**
+ * Create a primitive value object
+ * 
+ * The object will be pushed into object heap and return object id.
+ * 
+ * @param value
+ *          must be a javascript primitive value
+ * @param tag
+ *          optional, debug only
+ * @returns object id
+ */
+RedbankVM.prototype.createPrimitive = function(value, tag) {
 
-  var obj = {
+  // check if value is js primitive
+  if (!(value === null || // ECMAScript bug according to MDN
+  typeof value === 'string' || typeof value === 'number'
+      || typeof value === 'boolean' || typeof value === 'undefined')) {
+    throw "value is NOT primitive";
+  }
+
+  var primitive = {
+    isPrimitive : true,
+    type : typeof value,
+    value : value,
+    tag : tag,
+
+    ref : 0,
+  };
+
+  if (typeof value === 'string') {
+
+    var hash = fnv32a(primitive.value);
+    primitive.hash = hash;
+
+    var id = this.findString(value, hash);
+
+    if (id === undefined) { // new string
+      // create new string
+
+      return;
+    }
+    else {
+      hash = hash >>> 20;
+      var node = new StringNode()
+      // StringHash[]
+    }
+  }
+
+  return this.register(primitive);
+};
+
+RedbankVM.prototype.createObject = function(proto, tag) {
+
+  var obj, id;
+
+  if (typeof proto !== 'number') {
+    throw "Use object id as prototype of object";
+  }
+
+  obj = {
 
     isPrimitive : false,
     type : 'object',
     ref : 0,
+    tag : tag,
 
     /** __proto__ * */
     PROTOTYPE : proto,
@@ -221,13 +233,14 @@ RedbankVM.prototype.createObject = function(proto) {
       return this;
     }
   };
+  
+  id = this.register(obj);
 
   // Functions have prototype objects.
-  if (proto !== null && proto !== this.OBJECT.proto
-      && this.isa(obj, this.FUNCTION.proto)) {
+  if (this.FUNCTION !== undefined && this.FUNCTION.proto !== undefined && this.isa(id, this.FUNCTION.proto)) {
     obj.type = 'function';
-    var id = this.register(this.createObject(this.OBJECT.proto));
-    this.setProperty(obj, 'prototype', id, true, false, false);
+    var pid = this.createObject(this.OBJECT.proto);
+    this.setProperty(id, 'prototype', pid, true, false, false);
   }
 
   // // Arrays have length.
@@ -242,7 +255,8 @@ RedbankVM.prototype.createObject = function(proto) {
   // };
   // };
 
-  return obj;
+
+  return id;
 };
 
 RedbankVM.prototype.createFunction = function(label, lexnum, length) {
@@ -251,15 +265,15 @@ RedbankVM.prototype.createFunction = function(label, lexnum, length) {
     throw "FUNCTION.prototype not initialized.";
   }
 
-  var func = this.createObject(this.FUNCTION.proto);
-  func.label = label;
-  func.lexicals = [];
-  func.lexnum = lexnum;
+  var id = this.createObject(this.FUNCTION.proto);
+  var obj = this.Objects[id];
+  obj.label = label;
+  obj.lexicals = [];
+  obj.lexnum = lexnum;
 
-  var lengthObj = this.createPrimitive(length);
-  var id = this.register(lengthObj);
-  this.setProperty(func, 'length', id, true, true, true);
-  return func;
+  var obj = this.createPrimitive(length);
+  this.setProperty(id, 'length', obj, true, true, true);
+  return id;
 };
 
 /**
@@ -269,22 +283,26 @@ RedbankVM.prototype.createFunction = function(label, lexnum, length) {
  *          nativeFunc JavaScript function.
  * @return {!Object} New function.
  */
-RedbankVM.prototype.createNativeFunction = function(nativeFunc) {
+RedbankVM.prototype.createNativeFunction = function(nativeFunc, tag) {
 
   if (this.FUNCTION.proto === undefined || this.FUNCTION.proto === null) {
     throw "FUNCTION.prototype not initialized.";
   }
 
-  var func = this.createObject(this.FUNCTION.proto);
+  var func = this.createObject(this.FUNCTION.proto, tag);
   func.nativeFunc = nativeFunc;
-  var lengthObj = this.createPrimitive(nativeFunc.length);
-  var id = this.register(lengthObj);
+  var id = this.createPrimitive(nativeFunc.length);
   this.setProperty(func, 'length', id, false, false, false);
   return func;
 };
 
-RedbankVM.prototype.findProperty = function(obj, name) {
+RedbankVM.prototype.findProperty = function(id, name) {
 
+  if (typeof id !== 'number') {
+    throw "Not an object id";
+  }
+
+  var obj = this.Objects[id];
   for (var i = 0; i < obj.properties.length; i++) {
     if (obj.properties[i].name === name) {
       return i;
@@ -306,12 +324,16 @@ RedbankVM.prototype.findProperty = function(obj, name) {
  * @param {boolean}
  *          opt_nonenum Non-enumerable property if true.
  */
-RedbankVM.prototype.setProperty = function(obj, name, index, writable,
+RedbankVM.prototype.setProperty = function(id, name, index, writable,
     enumerable, configurable) {
 
-  if (typeof index !== 'number') {
+  var obj;
+
+  if (typeof id !== 'number' || typeof index !== 'number') {
     throw "Convert object to object id for setProperty";
   }
+
+  obj = this.Objects[id];
 
   /**
    * any string is valid for js property name, including undefined, null, and
@@ -366,7 +388,7 @@ RedbankVM.prototype.setProperty = function(obj, name, index, writable,
   // obj.nonenumerable[name] = true;
   // }
 
-  var i = this.findProperty(obj, name);
+  var i = this.findProperty(id, name);
   if (i === undefined) {
 
     var property = {
@@ -408,47 +430,37 @@ RedbankVM.prototype.init = function() {
 
   // lexical for nested function
   var vm = this;
-  var wrapper, obj;
+  var wrapper, id, obj;
 
-  obj = this.createPrimitive(undefined);
-  obj.tag = "UNDEFINED";
+  id = this.createPrimitive(undefined, "UNDEFINED");
+  this.UNDEFINED = id;
 
-  this.UNDEFINED.object = obj;
-  this.UNDEFINED.id = this.register(obj);
-
-  // Object.prototype inherits null
-  obj = this.createObject(null);
-  obj.tag = "Object.prototype";
+  // Object.prototype inherits null TODO
+  id = this.createObject(0, "Object.prototype");
   this.OBJECT = {};
-  this.OBJECT.proto = obj;
-  this.register(obj);
+  this.OBJECT.proto = id;
 
   // Function.prototype inherits Object.prototype
   // createNativeFunction require this prototype
-  obj = this.createObject(this.OBJECT.proto);
+  id = this.createObject(this.OBJECT.proto, "Function.prototype");
+  obj = this.Objects[id];
   obj.type = 'function';
-  obj.tag = "Function.prototype";
   this.FUNCTION = {};
-  this.FUNCTION.proto = obj;
-  this.register(obj);
+  this.FUNCTION.proto = id;
 
   // Object.prototype.toString(), native
   wrapper = function() { // TODO don't know if works
     return vm.createPrimitive(this.toString());
   };
-  obj = this.createNativeFunction(wrapper);
-  obj.tag = "Object.prototype.toString()";
-  this.register(obj);
-  this.setProperty(this.OBJECT.proto, 'toString', obj.id, true, false, true);
+  id = this.createNativeFunction(wrapper, "Object.prototype.toString()");
+  this.setProperty(this.OBJECT.proto, 'toString', id, true, false, true);
 
   // Object.prototype.valueOf(), native
   wrapper = function() { // TODO don't know if works
     return vm.createPrimitive(this.valueOf());
   };
-  obj = this.createNativeFunction(wrapper);
-  obj.tag = "Object.prototype.valueOf()";
-  this.register(obj);
-  this.setProperty(this.OBJECT.proto, 'valueOf', obj.id, true, false, true);
+  id = this.createNativeFunction(wrapper, "Object.prototype.valueOf()");
+  this.setProperty(this.OBJECT.proto, 'valueOf', id, true, false, true);
 
   // TODO add more native functions according to ECMA standard
 
@@ -466,11 +478,9 @@ RedbankVM.prototype.init = function() {
     }
     return newObj;
   };
-  obj = this.createNativeFunction(wrapper);
-  obj.tag = "Object constructor";
-  this.setProperty(obj, 'prototype', this.OBJECT.proto.id, false, false, false);
-  this.register(obj);
-  this.OBJECT.ctor = obj;
+  id = this.createNativeFunction(wrapper, "Object constructor");
+  this.setProperty(id, 'prototype', this.OBJECT.proto, false, false, false);
+  this.OBJECT.ctor = id;
 
   // Function constructor. TODO need to adapt
   wrapper = function(var_args) {
@@ -510,12 +520,9 @@ RedbankVM.prototype.init = function() {
     return newFunc;
   };
 
-  obj = this.createNativeFunction(wrapper);
-  obj.tag = "Function constructor";
-  this.setProperty(obj, 'prototype', this.FUNCTION.proto.id, false, false,
-      false);
-  this.register(obj);
-  this.FUNCTION.ctor = obj;
+  id = this.createNativeFunction(wrapper, "Function constructor");
+  this.setProperty(id, 'prototype', this.FUNCTION.proto, false, false, false);
+  this.FUNCTION.ctor = id;
 
   // Create stub functions for apply and call.
   // These are processed as special cases in stepCallExpression.
@@ -996,10 +1003,9 @@ RedbankVM.prototype.set_to_object_prop = function(dst_objvar, propvar,
   this.assert_var_addr_prop(propvar);
 
   var dst_object_index = dst_objvar.index;
-  var dst_object = this.Objects[dst_object_index];
 
   // dst_object.set_property(propvar.index, src_objvar.index);
-  this.setProperty(dst_object, propvar.index, src_objvar.index);
+  this.setProperty(dst_object_index, propvar.index, src_objvar.index);
 };
 
 /**
@@ -1265,14 +1271,13 @@ RedbankVM.prototype.step = function(code, bytecode) {
     }
     else if (addr.type === VT_PRO) {
 
-      obj = this.Objects[this.TOS().index];
-      // var propIndex = obj.find_prop(addr.index);
-      var propIndex = this.findProperty(obj, addr.index);
+      id = this.TOS().index;
+      var propIndex = this.findProperty(id, addr.index);
       if (propIndex === undefined) {
         v = new JSVar(VT_OBJ, 0);
       }
       else {
-        v = new JSVar(VT_OBJ, obj.properties[propIndex].index);
+        v = new JSVar(VT_OBJ, this.Objects[id].properties[propIndex].index);
       }
 
       this.pop(); // TODO be careful for pop first push second for the same
@@ -1286,11 +1291,9 @@ RedbankVM.prototype.step = function(code, bytecode) {
     break;
 
   case "FUNC": // -- f1
-    val = bytecode.arg1;
-    // obj = this.Objects.push(new FuncObject(this, val)) - 1;
-    obj = this.createFunction(val, 0, 1); // TODO
-    obj = this.register(obj);
-    v = new JSVar(VT_OBJ, obj);
+    // TODO
+    id = this.createFunction(bytecode.arg1, bytecode.arg2, bytecode.arg3);
+    v = new JSVar(VT_OBJ, id);
     this.push(v);
     break;
 
@@ -1342,8 +1345,8 @@ RedbankVM.prototype.step = function(code, bytecode) {
   case "LITC":
     // push an constant value
     val = bytecode.arg1;
-    obj = this.Objects.push(this.createPrimitive(val)) - 1;
-    v = new JSVar(VT_OBJ, obj);
+    id = this.createPrimitive(val);
+    v = new JSVar(VT_OBJ, id);
     this.push(v);
     break;
 
@@ -1357,8 +1360,8 @@ RedbankVM.prototype.step = function(code, bytecode) {
   case "LITO":
     // create an object object and push to stack
     // obj = this.Objects.push(new ObjectObject(this)) - 1;
-    obj = this.Objects.push(this.createObject()) - 1;
-    v = new JSVar(VT_OBJ, obj);
+    id = this.createObject(this.OBJECT.proto);
+    v = new JSVar(VT_OBJ, id);
     this.push(v);
     break;
 
@@ -1443,10 +1446,10 @@ RedbankVM.prototype.step = function(code, bytecode) {
     this.pop();
 
     // create new value object
-    obj = this.Objects.push(this.createPrimitive(v)) - 1;
+    id = this.createPrimitive(v);
 
     // push result on stack
-    this.push(new JSVar(VT_OBJ, obj));
+    this.push(new JSVar(VT_OBJ, id));
     break;
 
   case "*":
@@ -1464,10 +1467,10 @@ RedbankVM.prototype.step = function(code, bytecode) {
 
     // create new value object
     // TODO using alloc
-    obj = this.Objects.push(this.createPrimitive(v)) - 1;
+    id = this.createPrimitive(v);
 
     // push result on stack
-    this.push(new JSVar(VT_OBJ, obj));
+    this.push(new JSVar(VT_OBJ, id));
     break;
 
   case '=':
@@ -1482,14 +1485,12 @@ RedbankVM.prototype.step = function(code, bytecode) {
     if (this.TOS().type === this.NOS().type
         && this.Objects[this.TOS().index].type === this.Objects[this.NOS().index].type
         && this.Objects[this.TOS().index].value === this.Objects[this.NOS().index].value) {
-      v = this.createPrimitive(true);
+      id = this.createPrimitive(true);
     }
     else {
-      v = this.createPrimitive(false);
+      id = this.createPrimitive(false);
     }
-
-    index = this.Objects.push(v) - 1;
-    v = new JSVar(VT_OBJ, index);
+    v = new JSVar(VT_OBJ, id);
 
     this.pop();
     this.pop();
@@ -1508,9 +1509,6 @@ RedbankVM.prototype.run = function(input, testcase) {
 
   this.code = input;
   this.testcase = testcase;
-
-  this.Objects[0] = this.createPrimitive(undefined);
-  this.Objects[0].ref = -1;
 
   console.log(Format.hline);
   console.log("[[Start Running ]]");
