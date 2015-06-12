@@ -27,13 +27,6 @@ var expectRValue = [ {
   prop : "init"
 } ];
 
-// function exprIsRValue(ast) {
-//  
-// var parent = ast.__parent__;
-// var type =
-//  
-// }
-
 /**
  * This function tells if current expr should be evaluated as address or value
  * 
@@ -874,22 +867,21 @@ FunctionNode.prototype.compileIdentifier = function(ast) {
     }
   }
 
-  // var index = find_name_in_params(fn, ast.name);
   var index = this.findNameInArguments(ast.name);
   if (index !== undefined) {
     this.emit('LITA', 'PARAM', index);
   }
   else {
-    // index = find_name_in_locals(fn, ast.name);
+
     index = this.findNameInLocals(ast.name);
     if (index !== undefined) {
       this.emit('LITA', 'LOCAL', index);
     }
     else {
-      // index = find_name_in_freevars(fn, ast.name);
+
       index = this.findNameInLexicals(ast.name);
       if (index !== undefined) {
-        this.emit('LITA', 'FRVAR', index);
+        this.emit('LITA', 'LEXICAL', index);
       }
       else {
         console.log("error: identifier: " + ast.name + " not found");

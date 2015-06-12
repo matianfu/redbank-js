@@ -820,8 +820,8 @@ function emit_as_tcp_client(testcase) {
   });
 }
 
-run_testsuite(TESTS);
-// run_single_in_suite(TESTS, "object", "object_member_expr_fetch");
+// run_testsuite(TESTS);
+run_single_in_suite(TESTS, "func", "closure");
 
 // emit_as_tcp_client(TESTS["basic"]["var_declare_dual"]);
 
