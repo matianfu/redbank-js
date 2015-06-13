@@ -63,8 +63,6 @@ function RedbankVM() {
   this.Stack = [];
   this.Objects = [];
 
-  // this.Links = []; // TODO should be removed
-
   // string hash table
   this.StringHash = [];
   // property hash table
@@ -92,7 +90,8 @@ RedbankVM.prototype.register = function(obj) {
 };
 
 /**
- * Pop an object out of heap and recycle object id
+ * 
+ * remove
  * 
  * @param id
  */
@@ -118,17 +117,6 @@ RedbankVM.prototype.isa = function(child, parent) {
   child = this.Objects[child].PROTOTYPE;
   return this.isa(child, parent);
 };
-
-// /** obsolete * */
-// RedbankVM.prototype.alloc_link = function() {
-//
-// for (var i = 0; i < this.Links.length; i++) {
-// if (this.Links[i] === undefined) {
-// return i;
-// }
-// }
-// return this.Links.length;
-// };
 
 RedbankVM.prototype.internFindString = function(string) {
 
@@ -170,48 +158,16 @@ RedbankVM.prototype.internNewString = function(id) {
   this.StringHash[hash] = id;
 };
 
-RedbankVM.prototype.incrREF = function(id) {
+RedbankVM.prototype.incrREF = function(id, referrer, index) {
 
-  this.getObject(id).ref++;
+  var obj = this.getObject(id);
+
+  obj.ref++;
+  // obj.backREF.push({
+  // referrer : referrer,
+  // index : index
+  // });
 };
-
-/**
- * Decrement object's reference count
- * 
- * If the object is a function object, the lexials are cleared; if the object is
- * an object object, the properties are cleared.
- * 
- * @param index
- */
-//RedbankVM.prototype.object_ref____decr = function(index) {
-//
-//  var i;
-//
-//  if (index === 0) {
-//    return;
-//  }
-//
-//  this.Objects[index].ref--;
-//
-//  if (this.Objects[index].ref === 0) {
-//
-//    var obj = this.Objects[index];
-//
-//    if (obj.type === "function") {
-//      for (i = 0; i < obj.lexicals.length; i++) {
-//        // this.link_ref_decr(obj.lexicals[i].index);
-//        this.decrREF(obj.lexicals[i].index);
-//      }
-//    }
-//    else if (obj.type === "object") {
-//      for (i = 0; i < obj.properties.length; i++) {
-//        this.decrREF(obj.properties[i].index);
-//      }
-//    }
-//
-//    this.Objects[index] = undefined;
-//  }
-//};
 
 RedbankVM.prototype.decrREF = function(id) {
 
@@ -252,8 +208,12 @@ RedbankVM.prototype.createLink = function(target) {
 
   var link = {
     type : 'link',
+    REF : {
+      count : 0,
+      array : [],
+    },
+
     target : target,
-    ref : 0,
   };
   var id = this.register(link);
 
@@ -261,17 +221,52 @@ RedbankVM.prototype.createLink = function(target) {
   return id;
 };
 
-//RedbankVM.prototype.unregisterLink = function(id) {
-//
-//  var obj = this.getObject(id);
-//
-//  if (obj.type !== 'link') {
-//    throw "not a link";
-//  }
-//
-//  this.decrREF(obj.target);
-//  this.unregister(id);
-//};
+RedbankVM.prototype.createProperty = function(parent, child, name, w, e, c) {
+
+  var property = {
+
+    type : 'property',
+
+    OUT : {
+      child : child,
+      name : name,
+      nextInObject : 0,
+      nextInSlot : 0,
+    },
+
+    IN : {
+      count : 0,
+      referrer : []
+    },
+
+    // parent is only used for information purpose
+    // when looking up in property hash table
+    parent : parent,
+
+    writable : (w === true) ? true : false,
+    enumerable : (e === true) ? true : false,
+    configurable : (c === true) ? true : false,
+  };
+
+  var id = this.register(property);
+  this.incrREF(name); // referencing to name string
+  this.incrREF(child); // referencing to child object
+
+  // property hash
+  var hash = HASHMORE(name.hash, parent);
+  hash = hash >>> 20;
+  property.nextInSlot = this.PropertyHash[hash];
+  this.PropertyHash[hash] = id;
+  this.incrREF(id);
+
+  // install
+  var obj = this.getObject(parent);
+  property.nextInObject = obj.property;
+  obj.property = id;
+  this.incrREF(id);
+
+  return id;
+};
 
 RedbankVM.prototype.createPrimitive = function(value, tag, builtin) {
 
@@ -293,13 +288,16 @@ RedbankVM.prototype.createPrimitive = function(value, tag, builtin) {
   }
 
   var primitive = {
+    type : typeof value,
+    REF : {
+      count : 0,
+      array : [],
+    },
 
     isPrimitive : true,
-    type : typeof value,
     value : value,
     tag : tag,
 
-    ref : 0,
   };
   id = this.register(primitive, builtin);
 
@@ -319,10 +317,13 @@ RedbankVM.prototype.createObject = function(proto, tag) {
     throw "Use object id as prototype of object";
   }
 
+  this.incrREF(proto);
+
   obj = {
+    type : 'object',
 
     isPrimitive : false,
-    type : 'object',
+
     ref : 0,
     tag : tag,
 
@@ -330,6 +331,8 @@ RedbankVM.prototype.createObject = function(proto, tag) {
     PROTOTYPE : proto,
 
     properties : [],
+
+    property : 0,
 
     /*
      * don't confuse these methods with Object's methods, which should be a
@@ -609,7 +612,7 @@ RedbankVM.prototype.init = function() {
   id = this.createPrimitive(undefined, "UNDEFINED");
   this.UNDEFINED = id;
   obj = this.getObject(id);
-  obj.ref = 1000; // TODO refactoring
+  obj.ref = Infinity; // TODO refactoring
 
   // Object.prototype inherits null TODO
   id = this.createObject(0, "Object.prototype");
@@ -1032,20 +1035,6 @@ RedbankVM.prototype.setLocal = function(addr, objvar) {
     this.incrREF(objvar.index);
     this.decrREF(v.index);
   }
-
-  // if (v.type === VT_LNK) {
-  // this.decrREF(this.Links[v.index].object);
-  // this.Links[v.index].object = objvar.index;
-  // this.incrREF(objvar.index);
-  // }
-  // else if (v.type === VT_OBJ) {
-  // this.decrREF(v.index);
-  // this.Stack[this.lid2sid(addr.index)] = objvar;
-  // this.incrREF(objvar.index);
-  // }
-  // else {
-  // throw "unrecognized var type in local slot";
-  // }
 };
 
 /**
@@ -1077,20 +1066,6 @@ RedbankVM.prototype.setParam = function(addr, objvar) {
     this.incrREF(objvar.index);
     this.decrREF(v.index);
   }
-
-  // if (v.type === VT_LNK) {
-  // this.decrREF(this.Links[v.index].object);
-  // this.Links[v.index].object = objvar.index;
-  // this.incrREF(objvar.index);
-  // }
-  // else if (v.type === VT_OBJ) {
-  // this.decrREF(v.index);
-  // this.Stack[this.pid2sid(addr.index)] = objvar;
-  // this.incrREF(objvar.index);
-  // }
-  // else {
-  // throw "unrecognized var type in param slot";
-  // }
 };
 
 /**
@@ -1236,8 +1211,6 @@ RedbankVM.prototype.printstack = function() {
       }
       else if (v.type === VT_LOC) {
         console.log(i + " : [addr] " + VT_LOC + " " + v.index);
-        // } else if (v.type === VT_VAL) {
-        // console.log(i + " : " + VT_VAL + " " + v.index);
       }
       else if (v.type === VT_ARG) {
         console.log(i + " : [addr] " + VT_ARG + " " + v.index);
@@ -1284,13 +1257,6 @@ RedbankVM.prototype.printfreevar = function() {
     }
 
     var obj = this.getObject(link.target);
-    // if (f.type !== VT_LNK) {
-    // throw "error freevar type";
-    // }
-
-    // console.log(i + " : " + "link id: " + f.index + ", ref: "
-    // + this.Links[f.index].ref + ", obj: " + this.Links[f.index].object);
-
     console.log(i + " : " + "link id: " + f.index + ", ref: " + link.ref
         + ", tar id: " + link.target + ", ref: " + obj.ref);
   }
@@ -1326,10 +1292,6 @@ RedbankVM.prototype.stepCapture = function(bytecode) {
       f.lexicals.push(new JSVar(VT_OBJ, v.index));
       this.incrREF(v.index);
     }
-    // if (v.type === VT_LNK) {
-    // f.lexicals.push(new JSVar(VT_LNK, v.index));
-    // this.Links[v.index].ref++;
-    // }
     else {
 
       // create a link, this will incr ref to target
@@ -1409,9 +1371,6 @@ RedbankVM.prototype.step = function(code, bytecode) {
       if (obj.type === 'link') {
         v = new JSVar(VT_OBJ, obj.target);
       }
-      // if (v.type === VT_LNK) {
-      // v = new JSVar(VT_OBJ, this.Links[v.index].object);
-      // }
       else if (v.type !== VT_OBJ) {
         throw "Unsupported var type in local slot";
       }
@@ -1422,9 +1381,6 @@ RedbankVM.prototype.step = function(code, bytecode) {
       if (obj.type === 'link') {
         v = new JSVar(VT_OBJ, obj.target);
       }
-      // if (v.type === VT_LNK) {
-      // v = new JSVar(VT_OBJ, this.Links[v.index].object);
-      // }
       else if (v.type !== VT_OBJ) {
         throw "Unsupported var type in param slot";
       }
