@@ -134,10 +134,13 @@ RedbankVM.prototype.internFindString = function(string) {
 
   var hash = HASH(string);
 
-  hash = hash >>> 20; // drop 20 bits, 12 bit left
+  hash = hash >>> 20;       // drop 20 bits, 12 bit left
   var id = this.StringHash[hash];
-
   if (id === undefined) {
+    throw "undefined is illegal value for StringHash table slot";
+  }
+  
+  if (id === 0) {
     return;
   }
 
@@ -166,8 +169,10 @@ RedbankVM.prototype.internNewString = function(id) {
 
   hash = hash >>> 20; // drop 20 bits, 12 bit left
 
-  obj.nextInSlot = this.StringHash[hash];
-  this.StringHash[hash] = id;
+  // obj.nextInSlot = this.StringHash[hash];
+  this.set(this.StringHash[hash], id, 'nextInSlot');
+  // this.StringHash[hash] = id;
+  this.set(id, this.id, 'StringHash', hash);
 };
 
 /**
@@ -363,6 +368,7 @@ RedbankVM.prototype.set = function(id, object, name, index) {
   var source = this.getObject(object);
 
   if (source[name] === undefined) {
+    // do NOT accept non-exist prop yet
     throw "error";
   }
 
@@ -489,6 +495,7 @@ RedbankVM.prototype.createPrimitive = function(value, tag, builtin) {
 
   // string intern
   if (typeof value === 'string') {
+    primitive.nextInSlot = 0;
     this.internNewString(id);
   }
 
@@ -768,6 +775,10 @@ RedbankVM.prototype.init = function() {
   // put vm inside objects array
   this.type = 'machine';
   id = this.register(this);
+  
+  for (var i = 0; i < 4096; i++) {
+    this.StringHash[i] = 0;
+  }
 
   id = this.createPrimitive(undefined, "UNDEFINED");
   this.UNDEFINED = id;
@@ -790,13 +801,14 @@ RedbankVM.prototype.init = function() {
   obj.REF.count = Infinity;
   this.OBJECT = {};
   this.OBJECT.proto = id;
-  
+
   id = this.createObject(this.OBJECT.proto, "Global Object");
   obj = this.getObject(id);
   obj.REF.count = Infinity;
   this.GLOBAL = id;
-  
-  this.setPropertyByLiteral(this.GLOBAL, this.UNDEFINED, 'undefined', false, false, false);
+
+  this.setPropertyByLiteral(this.GLOBAL, this.UNDEFINED, 'undefined', false,
+      false, false);
 
   // Function.prototype inherits Object.prototype
   // createNativeFunction require this prototype
@@ -912,12 +924,21 @@ RedbankVM.prototype.init = function() {
 };
 
 /**
- * construct a var
+ * Get current function's argument count
+ * 
+ * 
+ * @returns argument count
  */
-function JSVar(type, index) {
-  this.type = type;
-  this.index = index;
-}
+RedbankVM.prototype.ARGC = function() {
+
+  if (this.FP === 0) {
+    throw "main function has no args";
+  }
+
+  var id = this.Stack[this.FP - 3];
+  this.assertNumber(id);
+  return this.getObject(id).value;
+};
 
 RedbankVM.prototype.indexOfRET = function() {
 
@@ -1130,33 +1151,6 @@ RedbankVM.prototype.assertStackSlotFunction = function(slot) {
 };
 
 /**
- * Get the freevar array of current function
- * 
- * @returns
- */
-RedbankVM.prototype.freevars = function() {
-
-  if (this.FP === 0) {
-    throw "main function has no freevars";
-  }
-
-  var v = this.Stack[this.FP - 1]; // jsvar for Function Object
-  v = this.Objects[v.index]; // function object
-  return v.lexicals;
-};
-
-/**
- * This function fetch object id stored in given indexed slot in a function.
- * 
- * The link is resolved automatically.
- * 
- * @param index
- */
-RedbankVM.prototype.getFuncLexical = function(index) {
-
-};
-
-/**
  * convert local index to (absolute) stack index
  * 
  * @param lid
@@ -1165,23 +1159,6 @@ RedbankVM.prototype.getFuncLexical = function(index) {
  */
 RedbankVM.prototype.lid2sid = function(lid) {
   return this.FP + lid;
-};
-
-/**
- * Get current function's argument count
- * 
- * 
- * @returns argument count
- */
-RedbankVM.prototype.ARGC = function() {
-
-  if (this.FP === 0) {
-    throw "main function has no args";
-  }
-
-  var id = this.Stack[this.FP - 3];
-  this.assertNumber(id);
-  return this.getObject(id).value;
 };
 
 /**
@@ -1426,7 +1403,7 @@ RedbankVM.prototype.printstack = function() {
   }
 };
 
-RedbankVM.prototype.printfreevar = function() {
+RedbankVM.prototype.printLexicals = function() {
 
   if (this.FP < 2) {
     return;
@@ -1597,7 +1574,6 @@ RedbankVM.prototype.step = function(code, bytecode) {
     // push an constant value
     val = bytecode.arg1;
     id = this.createPrimitive(val);
-    // v = new JSVar(VT_OBJ, id);
     this.push(id);
     break;
 
@@ -1653,13 +1629,6 @@ RedbankVM.prototype.step = function(code, bytecode) {
       // restore fp and pc
       this.PC = this.PCStack.pop();
       this.FP = this.FPStack.pop();
-
-      // if (result === undefined) { // no return value provided
-      // this.push(this.UNDEFINED);
-      // }
-      // else {
-      // this.Stack.push(result); // TODO
-      // }
     }
     break;
 
@@ -1729,8 +1698,6 @@ RedbankVM.prototype.step = function(code, bytecode) {
     this.pop();
 
     id = this.createPrimitive(v);
-
-    // push result on stack
     this.push(id);
     break;
 
@@ -1812,7 +1779,7 @@ RedbankVM.prototype.run = function(input, testcase) {
     var bytecode = this.code[this.PC];
 
     this.printstack();
-    this.printfreevar();
+    this.printLexicals();
     console.log(Format.hline);
     console.log("PC : " + this.PC + ", FP : " + this.FP);
     console.log("OPCODE: " + bytecode.op + ' '
@@ -1826,7 +1793,7 @@ RedbankVM.prototype.run = function(input, testcase) {
   }
 
   this.printstack();
-  this.printfreevar();
+  this.printLexicals();
   this.assert_no_leak();
 };
 
