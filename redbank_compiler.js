@@ -848,7 +848,7 @@ FunctionNode.prototype.compileFunctionExpression = function(ast) {
   this.emit('FUNC', fn, lexnum, ast.params.length);
 
   for (var i = 0; i < lexnum; i++) {
-    this.emit("CAPTURE", fn.lexicals[i].from, fn.lexicals[i].slot);
+    this.emit("CAPTURE", fn.lexicals[i].from, fn.lexicals[i].slot, i);
   }
 };
 
@@ -891,7 +891,7 @@ FunctionNode.prototype.compileIdentifier = function(ast) {
   }
 
   if (exprAsVal(ast)) {
-    this.emit("FETCH");
+    this.emit("FETCHA");
   }
 };
 
@@ -942,7 +942,7 @@ FunctionNode.prototype.compileMemberExpression = function(ast) {
   this.compileAST(ast.object);
   this.compileAST(ast.property);
   if (exprAsVal(ast)) {
-    this.emit("FETCH");
+    this.emit("FETCHO");
   }
 };
 

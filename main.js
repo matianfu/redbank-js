@@ -124,12 +124,8 @@ function assert_stack_slot_boolean_value(vm, index, val) {
  */
 function assert_stack_slot_function(vm, index) {
 
-  assert(vm.Stack.length > 0);
-  assert(vm.Stack[index].type === "Object");
-
-  var objIndex = vm.Stack[index].index;
-
-  assert(vm.Objects[objIndex].type === "function");
+  assert(vm.Stack.length > index);
+  assert(vm.typeOfObject(vm.Stack[index]) === 'function');
 }
 
 function assert_stack_slot_object(vm, index) {
@@ -591,14 +587,15 @@ var testcase_func = {
   func_return_undefined : {
     source : 'var a; a = function(){}; a = a(); rb_test("test");',
     test : function(vm) {
-      assert_stack_slot_undefined(vm, 0);
+      vm.assertStackSlotUndefined(0);
     }
   },
 
   func_pass_value : {
     source : 'var a; a = function(x){ var b = x; rb_test("test"); }; a(119);',
     test : function(vm) {
-      assert_stack_slot_number_value(vm, vm.FP, 119);
+      // assert_stack_slot_number_value(vm, vm.FP, 119);
+      vm.assertStackSlotNumberValue(vm.FP, 119);
     }
   },
 
@@ -606,7 +603,8 @@ var testcase_func = {
     source : 'var a; var b = function(x) { var c = x; return c; };'
         + 'a = b(278); rb_test("test");',
     test : function(vm) {
-      assert_stack_slot_number_value(vm, 0, 278);
+      // assert_stack_slot_number_value(vm, 0, 278);
+      vm.assertStackSlotNumberValue(0, 278);
     }
   },
 
@@ -626,19 +624,23 @@ var testcase_func = {
         + '   a = d(); rb_test("test4");                           ',
 
     test1 : function(vm) {
-      assert_stack_slot_number_value(vm, 0, 27);
+      // assert_stack_slot_number_value(vm, 0, 27);
+      vm.assertStackSlotNumberValue(0, 27);
     },
 
     test2 : function(vm) {
-      assert_stack_slot_number_value(vm, 0, 54);
+      // assert_stack_slot_number_value(vm, 0, 54);
+      vm.assertStackSlotNumberValue(0, 54);
     },
 
     test3 : function(vm) {
-      assert_stack_slot_number_value(vm, 0, 81);
+      // assert_stack_slot_number_value(vm, 0, 81);
+      vm.assertStackSlotNumberValue(0, 81);
     },
 
     test4 : function(vm) {
-      assert_stack_slot_number_value(vm, 0, 108);
+      // assert_stack_slot_number_value(vm, 0, 108);
+      vm.assertStackSlotNumberValue(0, 108);
     },
   },
 
@@ -658,14 +660,16 @@ var testcase_boolean = {
   triple_equal_literal_true : {
     source : 'var a = 1 === 1; rb_test("test")',
     test : function(vm) {
-      assert_stack_slot_boolean_value(vm, 0, true);
+      // assert_stack_slot_boolean_value(vm, 0, true);
+      vm.assertStackSlotBooleanValue(0, true);
     }
   },
 
   triple_equal_literal_false : {
     source : 'var a = 2 === 1; rb_test("test")',
     test : function(vm) {
-      assert_stack_slot_boolean_value(vm, 0, false);
+      // assert_stack_slot_boolean_value(vm, 0, false);
+      vm.assertStackSlotBooleanValue(0, false);
     }
   }
 };
@@ -675,7 +679,8 @@ var testcase_control = {
   if_statement_no_alternative : {
     source : 'var a = 0; var b = 7; if (b === 7) a = 19; rb_test("test");',
     test : function(vm) {
-      assert_stack_slot_number_value(vm, 0, 19);
+      // assert_stack_slot_number_value(vm, 0, 19);
+      vm.assertStackSlotNumberValue(0, 19);
     }
   },
 };
@@ -684,27 +689,32 @@ var testcase_object = {
   object_assign_empty : {
     source : 'var a; a = {}; rb_test("test")',
     test : function(vm) {
-      assert_stack_slot_object(vm, 0);
+      // assert_stack_slot_object(vm, 0);
+      vm.assertStackSlotObject(0);
     }
   },
   object_init_empty : {
     source : 'var a = {}; rb_test("test")',
     test : function(vm) {
-      assert_stack_slot_object(vm, 0);
+      // assert_stack_slot_object(vm, 0);
+      vm.assertStackSlotObject(0);
     }
   },
   object_member_expr_assign : {
     source : 'var a; a = {}; a.x = 19; rb_test("test");',
     test : function(vm) {
-      assert_stack_slot_object(vm, 0);
-      var objIndex = vm.Stack[0].index;
-      assert_object_property_number_value(vm, objIndex, "x", 19);
+      // assert_stack_slot_object(vm, 0);
+      vm.assertStackSlotObject(0);
+      vm.assertStackSlotObjectPropertyNumberValue(0, 'x', 19);
+      // var objIndex = vm.Stack[0].index;
+      // assert_object_property_number_value(vm, objIndex, "x", 19);
     }
   },
   object_member_expr_fetch : {
     source : 'var a; var b = {}; b.x = 138; a = b.x; rb_test("test");',
     test : function(vm) {
-      assert_stack_slot_number_value(vm, 0, 138);
+      // assert_stack_slot_number_value(vm, 0, 138);
+      vm.assertStackSlotNumberValue(0, 138);
     }
   }
 };
@@ -731,10 +741,10 @@ var testcase_future = {
 };
 
 var TESTS = {
-  basic : testcase_basic,
-  func : testcase_func,
-  boolean : testcase_boolean,
-  control : testcase_control,
+  // basic : testcase_basic,
+  // func : testcase_func,
+  // boolean : testcase_boolean,
+  // control : testcase_control,
   object : testcase_object,
   global : testcase_global,
 };
@@ -827,8 +837,6 @@ run_testsuite(TESTS);
 
 // var runner = new SocketTestRunner(TESTS, "basic");
 // runner.startTcpClient();
-
-
 
 //var source = ""; 
 //var interpreter = JSInterpreter.BuildInterpreter(source);
