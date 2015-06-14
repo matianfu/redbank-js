@@ -4,15 +4,6 @@
  * 
  ******************************************************************************/
 
-/**
- * var type constant
- * 
- * VT_OBJ is the object id, including primitive and non-primitive may be placed
- * on params, locals, temps, but not lexical
- * 
- * VT_LNK is the link to object id, it may be placed on params and locals. temps
- * may not be VT_LINK, lexical must be VT_LNK
- */
 var Format = require('./redbank_format.js');
 
 // var HORIZONTAL_LINE = "=================================================";
@@ -278,7 +269,7 @@ RedbankVM.prototype.decrREF = function(id, object, name, index) {
       break;
 
     case 'object':
-
+      // TODO recycle object properties
       break;
 
     default:
@@ -1062,74 +1053,12 @@ RedbankVM.prototype.assertJSObject = function(id) {
   throw "assert fail, given id is NEITHER object NOR function";
 };
 
-RedbankVM.prototype.assert_var_object_boolean = function(v) {
-  if (v.type !== VT_OBJ) {
-    throw "var is not an object, assert fail";
-  }
-
-  if (this.Objects[v.index].type !== "boolean") {
-    throw "var -> object is not a boolean, assert fail";
-  }
-};
-
-RedbankVM.prototype.getval_var_object_boolean = function(v) {
-
-  this.assert_var_object_boolean(v);
-  return this.Objects[v.index].value;
-};
-
-RedbankVM.prototype.assert_var_object_object = function(v) {
-  if (v.type !== VT_OBJ) {
-    throw "var is not an object, assert fail";
-  }
-  if (this.Objects[v.index].type !== "object") {
-    throw "var -> object is not an object object assert fail";
-  }
-};
-
-RedbankVM.prototype.assert_var_addr = function(v) {
-  if (v.type === VT_LOC || v.type === VT_ARG || v.type === VT_LEX
-      || v.type === VT_PRO) {
-    return;
-  }
-  else {
-    throw "var is not an address, assert fail";
-  }
-};
-
 RedbankVM.prototype.assertAddrLocal = function(id) {
 
-  assertAddr(id);
+  this.assertAddr(id);
 
   var obj = this.getObject(id);
-  assert(obj.addrType === ADDR_LOCAL);
-};
-
-RedbankVM.prototype.assert_var_addr_param = function(v) {
-  if (v.type === VT_ARG) {
-    return;
-  }
-  else {
-    throw "var is not an param address";
-  }
-};
-
-RedbankVM.prototype.assert_var_addr_frvar = function(v) {
-  if (v.type === VT_LEX) {
-    return;
-  }
-  else {
-    throw "var is not an freevar address";
-  }
-};
-
-RedbankVM.prototype.assert_var_addr_prop = function(v) {
-  if (v.type === VT_PRO) {
-    return;
-  }
-  else {
-    throw "var is not an property address";
-  }
+  this.assert(obj.addrType === ADDR_LOCAL);
 };
 
 /**
@@ -1193,6 +1122,12 @@ RedbankVM.prototype.assertStackSlotObjectPropertyNumberValue = function(slot,
   }
 
   throw "property not found or value mismatch";
+};
+
+RedbankVM.prototype.assertStackSlotFunction = function(slot) {
+
+  var id = this.Stack[slot];
+  this.assert(this.typeOfObject(id) === 'function');
 };
 
 /**
@@ -1275,123 +1210,7 @@ RedbankVM.prototype.pop = function() {
   var id = this.TOS();
   this.set(0, this.id, 'Stack', this.Stack.length - 1);
   this.Stack.pop();
-  return id; // may be undefined now
-};
-
-//
-// /**
-// * Swap TOS and NOS
-// *
-// * FORTH: N1, N1 -- N2, N1
-// */
-// RedbankVM.prototype.swap = function() {
-// var n1, n2;
-// n1 = this.Stack.pop();
-// n2 = this.Stack.pop();
-//
-// this.Stack.push(n1);
-// this.Stack.push(n2);
-// };
-//
-// /**
-// * set an object var to local slot
-// *
-// * @param addr
-// * @param objvar
-// */
-// RedbankVM.prototype.setLocal = function(addr, id) {
-//
-// var addrObj = this.getObject(addr);
-//
-// var old, stack_index;
-//
-// this.assertAddrLocal(addr);
-// this.assertNonAddr(id);
-//
-// var v = this.Stack[this.lid2sid(addr.index)];
-//
-// var obj = this.getObject(v.index);
-// if (obj.type === 'link') {
-// old = obj.target;
-// obj.target = id.index;
-// this.incrREF(obj.target);
-// this.decrREF(old);
-// }
-// else {
-// old = v.index;
-// stack_index = this.lid2sid(addr.index);
-// this.Stack[stack_index] = objvar;
-// this.incrREF(id.index, this.Stack, stack_index);
-// this.decrREF(v.index, this.Stack, stack_index);
-// }
-// };
-//
-// /**
-// * set an object var to param slot
-// *
-// * @param addr
-// * @param objvar
-// */
-// RedbankVM.prototype.setParam = function(addr, objvar) {
-//
-// this.assert_var_addr_param(addr);
-// this.assertNonAddr(objvar);
-//
-// var old;
-//
-// // var on stack, local slot
-// var v = this.Stack[this.pid2sid(addr.index)];
-//
-// var obj = this.getObject(v.index);
-// if (obj.type === 'link') {
-// old = obj.target;
-// obj.target = objvar.index;
-// this.incrREF(obj.target);
-// this.decrREF(old);
-// }
-// else {
-// old = v.index;
-// this.Stack[this.pid2sid(addr.index)] = objvar;
-// this.incrREF(objvar.index);
-// this.decrREF(v.index);
-// }
-// };
-//
-// /**
-// * set an object var to frvar slot
-// *
-// * @param addr
-// * @param objvar
-// */
-// RedbankVM.prototype.setLexical = function(addr, objvar) {
-//
-// this.assert_var_addr_frvar(addr);
-// this.assertNonAddr(objvar);
-//
-// var v = this.freevars()[addr.index];
-// var obj = this.getObject(v.index);
-//
-// this.assert(obj.type === 'link');
-//
-// var old = obj.target;
-// obj.target = objvar.index;
-// this.incrREF(objvar.index);
-// this.decrREF(old);
-//
-// // this.decrREF(this.Links[v.index].object);
-// // this.Links[v.index].object = objvar.index;
-// // this.incrREF(objvar.index);
-//
-// };
-
-RedbankVM.prototype.set_to_object_prop = function(dst_objvar, propvar,
-    src_objvar) {
-
-  this.assert_var_object_object(dst_objvar);
-  this.assert_var_addr_prop(propvar);
-
-  var dst_object_index = dst_objvar.index;
-  this.setProperty(dst_object_index, propvar.index, src_objvar.index);
+  return; // don't return id, may be undefined
 };
 
 RedbankVM.prototype.fetcha = function() {
@@ -1606,44 +1425,6 @@ RedbankVM.prototype.printstack = function() {
       }
     }
   }
-
-  // if (v.type === VT_OBJ) {
-  // var index = v.index;
-  // var obj = this.Objects[index];
-  // if (obj.type === "object") {
-  // console.log(i + " : " + index + " (object) ref: " + obj.ref);
-  // }
-  // else if (obj.type === "function") {
-  // var func_prt = VT_OBJ + " " + index + " (function) " + "entry: "
-  // + obj.label + ", ref: " + obj.ref;
-  // console.log(i + " : " + func_prt);
-  // }
-  // else if (obj.type === "undefined") {
-  // console.log(i + " : " + "UNDEFINED");
-  // }
-  // else {
-  // console.log(i + " : " + VT_OBJ + ", index: " + index + ", value: "
-  // + obj.value + ", ref: " + obj.ref);
-  // }
-  //
-  // }
-  // else if (v.type === VT_LOC) {
-  // console.log(i + " : [addr] " + VT_LOC + " " + v.index);
-  // }
-  // else if (v.type === VT_ARG) {
-  // console.log(i + " : [addr] " + VT_ARG + " " + v.index);
-  // }
-  // else if (v.type === VT_LEX) {
-  // console.log(i + " : [addr] " + VT_LEX + " " + v.index);
-  // }
-  // else if (v.type === "undefined") {
-  // console.log(i + " : UNDEFINED");
-  // }
-  // else {
-  // console.log(i + " : " + v.type);
-  // }
-  // }
-
 };
 
 RedbankVM.prototype.printfreevar = function() {

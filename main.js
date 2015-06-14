@@ -49,8 +49,8 @@ var generate_source_with_escodegen = false;
 // console.log(generated);
 // }
 /**
- * This two nonsense function are used for breakpoint. In nodeeclipse, event
- * hander or callbacks sometimes won't stop at breakpoint.
+ * These two nonsense functions are used for breakpoint. In nodeclipse, event
+ * handler or callbacks sometimes won't stop at breakpoint.
  */
 function doNothing() {
 }
@@ -59,113 +59,6 @@ function breakpoint() {
   doNothing();
 }
 
-/**
- * test assert
- * 
- * @param expr
- */
-function assert(expr) {
-  if (expr !== true) {
-    breakpoint();
-    throw "ASSERT_TRUE_FAIL";
-  }
-}
-
-/**
- * Assert the (absolutely) indexed stack slot holds an number object (var), and
- * it's value equals to given value.
- * 
- * @param vm
- * @param index
- *          slot index, absolute value
- * @param val
- *          given value
- */
-function assert_stack_slot_number_value(vm, index, val) {
-
-  assert(vm.Stack.length > index);
-  assert(vm.Stack[index].type === "Object");
-
-  var objIndex = vm.Stack[index].index;
-
-  assert(vm.Objects[objIndex].type === "number");
-  assert(vm.Objects[objIndex].value === val);
-}
-
-/**
- * Assert the (absolutely) indexed stack slot holds an boolean object (var), and
- * it's value equals to given value (true of false)
- * 
- * @param vm
- * @param index
- * @param val
- */
-function assert_stack_slot_boolean_value(vm, index, val) {
-
-  if (typeof val !== 'boolean') {
-    throw "boolean value required";
-  }
-
-  assert(vm.Stack.length > index);
-  assert(vm.Stack[index].type === "Object");
-
-  var oi = vm.Stack[index].index;
-
-  assert(vm.Objects[oi].type === "boolean");
-  assert(vm.Objects[oi].value === val);
-}
-
-/**
- * Assert the (absolutely) indexed stack slot holds an function object (var)
- * 
- * @param vm
- * @param index
- *          slot index, absolute value
- */
-function assert_stack_slot_function(vm, index) {
-
-  assert(vm.Stack.length > index);
-  assert(vm.typeOfObject(vm.Stack[index]) === 'function');
-}
-
-function assert_stack_slot_object(vm, index) {
-
-  assert(vm.Stack.length > 0);
-  assert(vm.Stack[index].type === "Object");
-
-  var objIndex = vm.Stack[index].index;
-
-  assert(vm.Objects[objIndex].type === "object");
-}
-
-function assert_object_property_number_value(vm, objIndex, prop, val) {
-
-  var obj = vm.Objects[objIndex];
-  assert(obj.type === "object");
-
-  var propIndex = vm.findProperty(objIndex, prop);
-  assert(propIndex !== undefined);
-
-  var propObjIndex = obj.properties[propIndex].index;
-  assert(vm.Objects[propObjIndex].type === "number");
-  assert(vm.Objects[propObjIndex].value === val);
-}
-
-/**
- * Assert the (absolutely) indexed stack slot holds an undefined object (var)
- * 
- * @param vm
- * @param index
- */
-function assert_stack_slot_undefined(vm, index) {
-
-  assert(vm.Stack.length > index);
-  assert(vm.Stack[index].type === "Object"); // TODO move type define into vm
-
-  var objIndex = vm.Stack[index].index;
-
-  assert(objIndex === 0);
-}
 
 /**
  * generate name and group property in each test case
@@ -571,16 +464,17 @@ var testcase_func = {
   func_declare_init : {
     source : 'var a = function(){}; rb_test("test")',
     test : function(vm) {
-      assert_stack_slot_function(vm, 0);
+      vm.assertStackSlotFunction(0);
     }
   },
 
   func_invoke : { // important !!!
     source : 'var a; a = function(){ rb_test("test"); }; a(); ',
     test : function(vm) {
-      assert(vm.FP > 0);
-      assert(vm.FPStack.length === 1);
-      assert_stack_slot_function(vm, vm.FP - 1);
+      // assert(vm.FP > 0);
+      // assert(vm.FPStack.length === 1);
+      // assert_stack_slot_function(vm, vm.FP - 1);
+      vm.assertStackSlotFunction(vm.FP - 1);
     }
   },
 
@@ -741,10 +635,10 @@ var testcase_future = {
 };
 
 var TESTS = {
-  // basic : testcase_basic,
-  // func : testcase_func,
-  // boolean : testcase_boolean,
-  // control : testcase_control,
+  basic : testcase_basic,
+  func : testcase_func,
+  boolean : testcase_boolean,
+  control : testcase_control,
   object : testcase_object,
   global : testcase_global,
 };
