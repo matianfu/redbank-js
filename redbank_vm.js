@@ -314,6 +314,7 @@ RedbankVM.prototype.createLink = function(target) {
   return id;
 };
 
+/** not used yet * */
 RedbankVM.prototype.createLexical = function(size) {
 
   var lexical = {
@@ -471,6 +472,7 @@ RedbankVM.prototype.createPrimitive = function(value, tag, builtin) {
     }
   }
 
+  // null, string, number, boolean, undefined
   var primitive = {
     type : typeof value,
     REF : {
@@ -637,6 +639,7 @@ RedbankVM.prototype.setProperty = function(parent, child, name, writable,
 
   var obj;
 
+  // for debug
   if (typeof parent !== 'number' || typeof child !== 'number') {
     throw "Convert object to object id for setProperty";
   }
@@ -748,24 +751,10 @@ RedbankVM.prototype.getProperty = function(parent, name) {
   if (prop === undefined) {
     return this.UNDEFINED;
   }
-
   var id = this.getObject(prop).child;
-
   return (id === 0) ? this.UNDEFINED : id;
 };
 
-/**
- * constructor for function object
- */
-// function FuncObject(vm, value) {
-// this.vm = vm;
-// this.isPrimitive = true;
-// this.type = "function";
-//  
-// this.value = value; // value is the jump position
-// this.freevars = []; // hold freevar
-// this.ref = 0;
-// }
 RedbankVM.prototype.init = function() {
 
   // lexical for nested function
@@ -797,8 +786,17 @@ RedbankVM.prototype.init = function() {
 
   // Object.prototype inherits null TODO
   id = this.createObject(0, "Object.prototype");
+  obj = this.getObject(id);
+  obj.REF.count = Infinity;
   this.OBJECT = {};
   this.OBJECT.proto = id;
+  
+  id = this.createObject(this.OBJECT.proto, "Global Object");
+  obj = this.getObject(id);
+  obj.REF.count = Infinity;
+  this.GLOBAL = id;
+  
+  this.setPropertyByLiteral(this.GLOBAL, this.UNDEFINED, 'undefined', false, false, false);
 
   // Function.prototype inherits Object.prototype
   // createNativeFunction require this prototype
@@ -1038,6 +1036,7 @@ RedbankVM.prototype.assertString = function(id) {
 
 /**
  * both object and function are valid JSObject
+ * 
  * @param id
  */
 RedbankVM.prototype.assertJSObject = function(id) {
@@ -1415,7 +1414,7 @@ RedbankVM.prototype.printstack = function() {
             + obj.index);
         break;
       case 'object':
-        console.log(i + " : " + id + " (object) ");
+        console.log(i + " : " + id + " (object) ref: " + obj.REF.count);
         break;
       case 'function':
         console.log(i + " : " + id + " (function) ");
@@ -1583,8 +1582,10 @@ RedbankVM.prototype.step = function(code, bytecode) {
     }
     else if (bytecode.arg1 === "PROP") {
       this.push(this.createPrimitive(bytecode.arg2));
-      // v = new JSVar(VT_PRO, bytecode.arg2);
-      // this.Stack.push(v);
+    }
+    else if (bytecode.arg1 === "GLOBAL") {
+      this.push(this.GLOBAL);
+      this.push(this.createPrimitive(bytecode.arg2)); // string name
     }
     else {
       throw "not supported yet";

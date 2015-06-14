@@ -884,8 +884,12 @@ FunctionNode.prototype.compileIdentifier = function(ast) {
         this.emit('LITA', 'LEXICAL', index);
       }
       else {
-        console.log("error: identifier: " + ast.name + " not found");
-        throw "error";
+        this.emit('LITA', 'GLOBAL', ast.name);
+        
+        if (exprAsVal(ast)) {
+          this.emit("FETCHO");
+        }
+        return;
       }
     }
   }
