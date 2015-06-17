@@ -228,8 +228,9 @@ RedbankVM.prototype.isa = function(child, parent) {
 RedbankVM.prototype.internFindString = function(string) {
 
   var hash = HASH(string);
-
-  hash = hash >>> (32 - STRING_HASHBITS); // drop 20 bits, 12 bit left
+  
+  hash = hash >>> (32 - STRING_HASHBITS);
+  
   var id = this.StringHash[hash];
 
   if (id === undefined) {
@@ -240,7 +241,7 @@ RedbankVM.prototype.internFindString = function(string) {
     return;
   }
 
-  for (; id !== undefined; id = this.getObject(id).nextInSlot) {
+  for (; id !== 0; id = this.getObject(id).nextInSlot) {
     var obj = this.Objects[id];
 
     if (obj.type !== 'string') {
@@ -292,8 +293,8 @@ RedbankVM.prototype.uninternString = function(id) {
 
     if (next === id) {
       var nextnext = this.getObject(next).nextInSlot;
-
       this.set(nextnext, curr, 'nextInSlot');
+      return;
     }
   }
 };
