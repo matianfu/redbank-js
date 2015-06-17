@@ -18,6 +18,11 @@
 	</natures>
 	<linkedResources>
 		<link>
+			<name>common.js</name>
+			<type>1</type>
+			<locationURI>PARENT-2-PROJECT_LOC/redbank_format.js</locationURI>
+		</link>
+		<link>
 			<name>escodegen.js</name>
 			<type>1</type>
 			<locationURI>PARENT-2-PROJECT_LOC/escodegen.js</locationURI>
@@ -46,11 +51,6 @@
 			<name>redbank_compiler.js</name>
 			<type>1</type>
 			<locationURI>PARENT-2-PROJECT_LOC/redbank_compiler.js</locationURI>
-		</link>
-		<link>
-			<name>redbank_format.js</name>
-			<type>1</type>
-			<locationURI>PARENT-2-PROJECT_LOC/redbank_format.js</locationURI>
 		</link>
 		<link>
 			<name>redbank_vm.js</name>

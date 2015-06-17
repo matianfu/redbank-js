@@ -11,7 +11,7 @@ var JSInterpreter = require("./interpreter.js");
 var ESCodegen_Main = require("escodegen");
 var Compiler = require("./redbank_compiler.js");
 var RedbankVM = require("./redbank_vm.js");
-var Format = require("./redbank_format.js");
+var Common = require("./redbank_format.js");
 
 /**
  * constants
@@ -37,7 +37,7 @@ var generate_source_with_escodegen = false;
 // // parse this case with esprima
 // var ast = Esprima_Main.parse(source);
 //
-// // output ast in JSON format
+// // output ast in JSON Common.Format
 // if (output_ast) {
 // var ast_json = JSON.stringify(ast, null, 2);
 // console.log(ast_json);
@@ -58,7 +58,6 @@ function doNothing() {
 function breakpoint() {
   doNothing();
 }
-
 
 /**
  * generate name and group property in each test case
@@ -81,12 +80,12 @@ function generate_testcase_name(testsuite) {
 function run_case(testcase, opt_logast, opt_logsrc) {
 
   // header
-  console.log(Format.hline);
-  console.log(Format.hline);
+  console.log(Common.Format.hline);
+  console.log(Common.Format.hline);
   console
       .log("TEST GROUP: " + testcase.group + ", TEST CASE: " + testcase.name);
-  console.log(Format.hline);
-  console.log(Format.hline);
+  console.log(Common.Format.hline);
+  console.log(Common.Format.hline);
 
   // parse ast
   var ast = Esprima_Main.parse(testcase.source);
@@ -100,24 +99,24 @@ function run_case(testcase, opt_logast, opt_logsrc) {
   var bytecodes = Compiler.compile(ast);
 
   if (opt_logsrc === true) {
-    console.log(Format.hline);
+    console.log(Common.Format.hline);
     console.log(testcase.source);
-    console.log(Format.hline);
+    console.log(Common.Format.hline);
   }
 
   // run bytecodes with redbank vm
   var vm = new RedbankVM();
-  vm.run(bytecodes, testcase);
+  vm.run(bytecodes, testcase, testcase.init);
 
   // footer
-  console.log(Format.hline);
-  console.log(Format.blank);
-  console.log(Format.blank);
-  console.log(Format.blank);
+  console.log(Common.Format.hline);
+  console.log(Common.Format.blank);
+  console.log(Common.Format.blank);
+  console.log(Common.Format.blank);
 }
 
 /**
- * convert bytecodes to line format
+ * convert bytecodes to line Common.Format
  */
 function bytecode_to_string(bytecodes) {
   var string = "";
@@ -134,7 +133,7 @@ function bytecode_to_string(bytecodes) {
 }
 
 /**
- * parse, compile and generate bytecodes in line format
+ * parse, compile and generate bytecodes in line Common.Format
  * 
  * @param testcase
  * @returns {String}
@@ -165,19 +164,19 @@ function run_testsuite(testsuite) {
 
   console.log("TEST REPORT : " + testcase_count + " test cases in "
       + group_count + " group(s) passed.");
-  console.log(Format.hline);
+  console.log(Common.Format.hline);
 }
 
-function run_single_in_suite(testsuite, group_name, testcase_name) {
+function run_single_in_suite(testsuite, group, testcase) {
 
   generate_testcase_name(testsuite);
-  run_case(testsuite[group_name][testcase_name]);
+  run_case(testsuite[group][testcase]);
 }
 
 /*******************************************************************************
  * 
  * RemoteTest is the 'pseudo' vm for test cases. It merely generate test
- * commands in line command format.
+ * commands in line command Common.Format.
  * 
  ******************************************************************************/
 
@@ -274,7 +273,7 @@ SocketTestRunner.prototype.handleLine = function(line) {
     console.log("READY");
 
     this.testcase = this.all.shift();
-    console.log(Format.hline);
+    console.log(Common.Format.hline);
     console.log("Test Group: " + this.testcase.group + " Case: "
         + this.testcase.name);
 
@@ -622,6 +621,17 @@ var testcase_global = {
   }
 };
 
+var testcase_internal = {
+
+  internal_object : {
+    init : Common.InitMode.OBJECT_PROTOTYPE,
+    source : 'var a = {}; a.x = 10;',
+    test : function(vm) {
+
+    }
+  }
+};
+
 /**
  * these group holds test cases planned to be used in future.
  */
@@ -641,6 +651,7 @@ var TESTS = {
   control : testcase_control,
   object : testcase_object,
   global : testcase_global,
+  internal : testcase_internal,
 };
 
 // run_testsuite(TESTS);
@@ -724,8 +735,8 @@ function emit_as_tcp_client(testcase) {
   });
 }
 
-run_testsuite(TESTS);
-// run_single_in_suite(TESTS, "func", "closure");
+// run_testsuite(TESTS);
+run_single_in_suite(TESTS, "internal", "internal_object");
 
 // emit_as_tcp_client(TESTS["basic"]["var_declare_dual"]);
 

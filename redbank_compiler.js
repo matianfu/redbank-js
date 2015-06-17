@@ -1,6 +1,6 @@
 'use strict';
 
-var Format = require('./redbank_format.js');
+var Common = require('./redbank_format.js');
 
 var USE_RB_TEST = true;
 
@@ -224,7 +224,7 @@ function FunctionNode(compiler, uid, astnode, parent) {
 FunctionNode.prototype.emitBytecode = function(bytecode) {
   this.code.push(bytecode);
   if (silent !== true) {
-    console.log(Format.dotline + bytecode.op + ' '
+    console.log(Common.Format.dotline + bytecode.op + ' '
         + ((bytecode.arg1 === undefined) ? '' : bytecode.arg1) + ' '
         + ((bytecode.arg2 === undefined) ? '' : bytecode.arg2) + ' '
         + ((bytecode.arg3 === undefined) ? '' : bytecode.arg3));
