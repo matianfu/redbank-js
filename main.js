@@ -623,12 +623,25 @@ var testcase_global = {
 
 var testcase_internal = {
 
-  internal_object : {
+  internal_one_property : {
     init : Common.InitMode.OBJECT_PROTOTYPE,
     source : 'var a = {}; a.x = 10;',
     test : function(vm) {
 
     }
+  },
+  
+  internal_two_properties : {
+    init : Common.InitMode.OBJECT_PROTOTYPE,
+    source : 'var a = {}; a.x = 10; a.y = 20;',
+    test : function (vm) {
+      
+    }
+  },
+  
+  internal_cascade : {
+    init : Common.InitMode.OBJECT_PROTOTYPE,
+    source : 'var a = {}; a.x = {}; a.x.y = 10;',
   }
 };
 
@@ -736,7 +749,7 @@ function emit_as_tcp_client(testcase) {
 }
 
 // run_testsuite(TESTS);
-run_single_in_suite(TESTS, "internal", "internal_object");
+run_single_in_suite(TESTS, "internal", "internal_cascade");
 
 // emit_as_tcp_client(TESTS["basic"]["var_declare_dual"]);
 

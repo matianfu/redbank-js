@@ -12,9 +12,9 @@ var ADDR_LOCAL = 'local';
 var ADDR_PARAM = 'param';
 var ADDR_LEXICAL = 'lexical';
 
-var STRING_HASHBITS = 8;
+var STRING_HASHBITS = 7;
 var STRING_HASHTABLE_SIZE = (1 << STRING_HASHBITS);
-var PROPERTY_HASHBITS = 8;
+var PROPERTY_HASHBITS = 7;
 var PROPERTY_HASHTABLE_SIZE = (1 << PROPERTY_HASHBITS);
 
 /**
@@ -347,6 +347,11 @@ RedbankVM.prototype.incrREF = function(id, object, name, index) {
 RedbankVM.prototype.decrREF = function(id, object, name, index) {
 
   var i;
+  
+  if (id === 0) {
+    return;
+  }
+  
   var obj = this.getObject(id);
   if (obj === undefined || obj.REF.referrer.length === 0) {
     throw "error";
@@ -400,6 +405,7 @@ RedbankVM.prototype.decrREF = function(id, object, name, index) {
     case 'property':
       this.decrREF(obj.name, id, 'name'); // recycle name string
       this.decrREF(obj.child, id, 'child'); // recycle child
+      this.decrREF(obj.nextInObject, id, 'nextInObject'); // recycle next
       break;
 
     case 'function':
