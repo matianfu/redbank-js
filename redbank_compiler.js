@@ -1,6 +1,6 @@
 'use strict';
 
-var Common = require('./redbank_format.js');
+var Common = require('./common.js');
 
 var USE_RB_TEST = true;
 
@@ -885,7 +885,7 @@ FunctionNode.prototype.compileIdentifier = function(ast) {
       }
       else {
         this.emit('LITA', 'GLOBAL', ast.name);
-        
+
         if (exprAsVal(ast)) {
           this.emit("FETCHO");
         }
@@ -1135,6 +1135,12 @@ function build_function_tree(node) {
   return rootnode;
 }
 
+/**
+ * 
+ * @param astroot
+ * @param opt_logftree
+ * @returns
+ */
 function prepare(astroot, opt_logftree) {
 
   populate_parent(astroot);

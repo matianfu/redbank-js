@@ -4,7 +4,7 @@
  * 
  ******************************************************************************/
 
-var Common = require('./redbank_format.js');
+var Common = require('./common.js');
 
 // var HORIZONTAL_LINE = "=================================================";
 
@@ -52,6 +52,9 @@ function HASHMORE(hash, id) {
   return (hash * id) >>> 0;
 }
 
+/**
+ * for other parts of vm object, see initBootstrap function.
+ */
 function RedbankVM() {
 
   this.PC = 0;
@@ -72,16 +75,6 @@ function RedbankVM() {
   this.objectSnapshot = [];
   this.stringHashSnapshot = [];
   this.propertyHashSnapshot = [];
-
-  // reference to global scope constant
-  this.UNDEFINED = undefined;
-  this.NULL = undefined;
-  this.TRUE = undefined;
-  this.FALSE = undefined;
-  this.INFINITY = undefined;
-  this.NAN = undefined;
-  
-  this.GLOBAL = undefined;
 
   // bytecode array
   this.code = {};
@@ -228,9 +221,9 @@ RedbankVM.prototype.isa = function(child, parent) {
 RedbankVM.prototype.internFindString = function(string) {
 
   var hash = HASH(string);
-  
+
   hash = hash >>> (32 - STRING_HASHBITS);
-  
+
   var id = this.StringHash[hash];
 
   if (id === undefined) {
@@ -337,22 +330,14 @@ RedbankVM.prototype.incrREF = function(id, object, name, index) {
   });
 };
 
-/**
- * 
- * 
- * @param id
- * @param object
- * @param name
- * @param index
- */
 RedbankVM.prototype.decrREF = function(id, object, name, index) {
 
   var i;
-  
+
   if (id === 0) {
     return;
   }
-  
+
   var obj = this.getObject(id);
   if (obj === undefined || obj.REF.referrer.length === 0) {
     throw "error";
@@ -400,7 +385,7 @@ RedbankVM.prototype.decrREF = function(id, object, name, index) {
       break;
 
     case 'link':
-      this.decrREF(obj.target);
+      this.decrREF(obj.target, id, 'target');
       break;
 
     case 'property':
@@ -412,7 +397,7 @@ RedbankVM.prototype.decrREF = function(id, object, name, index) {
     case 'function':
       // recycle lexicals
       for (i = 0; i < obj.lexicals.length; i++) {
-        this.decrREF(obj.lexicals[i].index);
+        this.decrREF(obj.lexicals[i], id, 'lexicals', i);
       }
 
     case 'object':
@@ -542,6 +527,7 @@ RedbankVM.prototype.set = function(id, object, name, index) {
 
 };
 
+/** not used yet * */
 RedbankVM.prototype.createProperty = function(parent, child, name, w, e, c) {
 
 };
@@ -645,10 +631,9 @@ RedbankVM.prototype.createObject = function(proto, tag) {
   this.set(proto, id, 'PROTOTYPE');
 
   // Functions have prototype objects.
-  if (this.FUNCTION !== undefined && this.FUNCTION.proto !== undefined
-      && this.isa(id, this.FUNCTION.proto)) {
+  if (this.FUNCTION_PROTO !== undefined && this.isa(id, this.FUNCTION_PROTO)) {
     obj.type = 'function';
-    var pid = this.createObject(this.OBJECT.proto);
+    var pid = this.createObject(this.OBJECT_PROTO);
     this.setPropertyByLiteral(id, pid, 'prototype', true, false, false);
   }
 
@@ -669,11 +654,11 @@ RedbankVM.prototype.createObject = function(proto, tag) {
 
 RedbankVM.prototype.createFunction = function(label, lexnum, length) {
 
-  if (this.FUNCTION.proto === undefined || this.FUNCTION.proto === null) {
-    throw "FUNCTION.prototype not initialized.";
+  if (this.FUNCTION_PROTO === undefined || this.FUNCTION_PROTO === null) {
+    throw "FUNCTION_PROTOtype not initialized.";
   }
 
-  var id = this.createObject(this.FUNCTION.proto);
+  var id = this.createObject(this.FUNCTION_PROTO);
   var obj = this.Objects[id];
   obj.label = label;
   obj.lexicals = [];
@@ -697,12 +682,18 @@ RedbankVM.prototype.createFunction = function(label, lexnum, length) {
  */
 RedbankVM.prototype.createNativeFunction = function(nativeFunc, tag) {
 
-  if (this.FUNCTION.proto === undefined || this.FUNCTION.proto === null) {
-    throw "FUNCTION.prototype not initialized.";
+  if (this.FUNCTION_PROTO === undefined || this.FUNCTION_PROTO === null) {
+    throw "FUNCTION_PROTOtype not initialized.";
   }
 
-  var func = this.createObject(this.FUNCTION.proto, tag);
-  func.nativeFunc = nativeFunc;
+  // create object
+  var func = this.createObject(this.FUNCTION_PROTO, tag);
+
+  // set native func
+  var funcObj = this.getObject(func);
+  funcObj.nativeFunc = nativeFunc;
+
+  // create length property
   var id = this.createPrimitive(nativeFunc.length);
   this.setPropertyByLiteral(func, id, 'length', false, false, false);
   return func;
@@ -712,7 +703,7 @@ RedbankVM.prototype.createProperty = function() {
 
 };
 
-RedbankVM.prototype.findProperty = function(object, name) {
+RedbankVM.prototype.searchProperty = function(object, name) {
 
   if (typeof object !== 'number' || typeof name !== 'number') {
     throw "Not an object id";
@@ -727,6 +718,18 @@ RedbankVM.prototype.findProperty = function(object, name) {
   }
 
   return;
+};
+
+RedbankVM.prototype.deepSearchProperty = function(object, name) {
+
+  for (var x = object; x !== 0; x = this.getObject(x).PROTOTYPE) {
+
+    var prop = this.searchProperty(x, name);
+
+    if (prop !== undefined) {
+      return prop;
+    }
+  }
 };
 
 RedbankVM.prototype.setProperty = function(parent, child, name, writable,
@@ -794,7 +797,7 @@ RedbankVM.prototype.setProperty = function(parent, child, name, writable,
   // obj.nonenumerable[name] = true;
   // }
 
-  var prop = this.findProperty(parent, name);
+  var prop = this.searchProperty(parent, name);
 
   if (prop === undefined) {
 
@@ -872,7 +875,7 @@ RedbankVM.prototype.setPropertyByLiteral = function(parent, child, nameLiteral,
 
 RedbankVM.prototype.getProperty = function(parent, name) {
 
-  var prop = this.findProperty(parent, name);
+  var prop = this.deepSearchProperty(parent, name);
 
   if (prop === undefined) {
     return this.UNDEFINED;
@@ -910,7 +913,7 @@ RedbankVM.prototype.snapshot = function() {
 
 RedbankVM.prototype.createGlobal = function() {
 
-  var id = this.createObject(this.OBJECT.proto, "Global Object");
+  var id = this.createObject(this.OBJECT_PROTO, "Global Object");
   var obj = this.getObject(id);
   obj.REF.count = Infinity;
 
@@ -919,12 +922,10 @@ RedbankVM.prototype.createGlobal = function() {
       false, false);
 };
 
-RedbankVM.prototype.init = function(mode) {
+RedbankVM.prototype.bootstrap = function() {
 
-  var i;
-
+  var i, id, obj, wrapper;
   var vm = this;
-  var wrapper, id, obj;
 
   // zero string hash table
   for (i = 0; i < STRING_HASHTABLE_SIZE; i++) {
@@ -936,98 +937,133 @@ RedbankVM.prototype.init = function(mode) {
     this.PropertyHash[i] = 0;
   }
 
-  if (mode === Common.InitMode.NOTHING) {
-    return;
-  }
+  // reference to global scope constant
+  this.UNDEFINED = undefined;
+  this.NULL = undefined;
+  this.TRUE = undefined;
+  this.FALSE = undefined;
+  this.INFINITY = undefined;
+  this.NAN = undefined;
+  this.OBJECT_PROTO = undefined;
+  this.FUNCTION_PROTO = undefined;
+  this.GLOBAL = undefined;
 
-  // placeholder for id 0
+  // poison
   this.register({
     type : 'poison'
   });
 
   // put vm inside objects array
   this.type = 'machine';
+  this.REF = {
+    count : 0,
+    referrer : []
+  };
   id = this.register(this);
+  this.getObject(id).REF.count = Infinity;
 
-  // undefined
+  // null (value)
+  id = this.createPrimitive(null, "NULL");
+  this.NULL = id;
+  this.getObject(id).REF.count = Infinity;
+
+  // undefined (value)
   id = this.createPrimitive(undefined, "UNDEFINED");
   this.UNDEFINED = id;
-  obj = this.getObject(id);
-  obj.REF.count = Infinity; // TODO refactoring
+  this.getObject(id).REF.count = Infinity;
 
-  if (mode === Common.InitMode.UNDEFINED_ONLY) {
-    return;
-  }
-
-  // boolean true
+  // boolean true (value)
   id = this.createPrimitive(true, "TRUE");
   this.TRUE = id;
-  obj = this.getObject(id);
-  obj.REF.count = Infinity;
+  this.getObject(id).REF.count = Infinity;
 
-  // boolean false
+  // boolean false (value)
   id = this.createPrimitive(false, "FALSE");
   this.FALSE = id;
-  obj = this.getObject(id);
-  obj.REF.count = Infinity;
+  this.getObject(id).REF.count = Infinity;
 
-  // Object.prototype
-  id = this.createObject(0, "Object.prototype");
-  obj = this.getObject(id);
-  obj.REF.count = Infinity;
-  this.OBJECT = {};
-  this.OBJECT.proto = id;
+  /**
+   * Object.prototype
+   */
+  obj = {
+    type : 'object',
+    REF : {
+      count : Infinity,
+      referrer : [],
+    },
+    PROTOTYPE : 0,
+    property : 0,
+    isPrimitive : false,
 
-  if (mode === Common.InitMode.OBJECT_PROTOTYPE) {
-    return;
-  }
-
-  // Function.prototype inherits Object.prototype
-  // createNativeFunction require this prototype
-  id = this.createObject(this.OBJECT.proto, "Function.prototype");
-  obj = this.Objects[id];
-  obj.type = 'function';
-  this.FUNCTION = {};
-  this.FUNCTION.proto = id;
-
-  // Object.prototype.toString(), native
-  wrapper = function() { // TODO don't know if works
-    return vm.createPrimitive(this.toString());
+    tag : "Object.prototype",
   };
-  id = this.createNativeFunction(wrapper, "Object.prototype.toString()");
-  this.setPropertyByLiteral(this.OBJECT.proto, id, 'toString', true, false,
-      true);
+  id = this.register(obj);
+  this.OBJECT_PROTO = id;
 
-  // Object.prototype.valueOf(), native
-  wrapper = function() { // TODO don't know if works
-    return vm.createPrimitive(this.valueOf());
+  /**
+   * Function.prototype
+   * 
+   * ECMA262:
+   * 
+   * The Function prototype is itself a Function object that, when invoked,
+   * accepts any arguments and returns undefined.
+   * 
+   * Properties to be implemented:
+   * 
+   * apply, arguments, bind, call, caller, constructor, length, name, toString,
+   * __proto__, <function scope>
+   * 
+   * ATTENTION: this object does NOT have 'prototype' property. When invoked
+   * with 'new'
+   * 
+   * > new Function.prototype()
+   * > TypeError: function Empty() {} is not a constructor
+   * 
+   */
+  obj = {
+    type : 'function',
+    REF : {
+      count : Infinity,
+      referrer : [],
+    },
+    PROTOTYPE : this.OBJECT_PROTO,
+    property : 0,
+
+    nativeFunc : function() {
+      return vm.UNDEFINED;
+    },
+
+    tag : "Function.prototype",
   };
-  id = this.createNativeFunction(wrapper, "Object.prototype.valueOf()");
-  this
-      .setPropertyByLiteral(this.OBJECT.proto, id, 'valueOf', true, false, true);
+  id = this.register(obj);
+  this.FUNCTION_PROTO = id;
 
-  // TODO add more native functions according to ECMA standard
-
-  // Object constructor, native
-  wrapper = function(var_args) {
-    var newObj;
-
-    if (this.parent === vm.OBJECT) {
-      throw "new is not supported yet";
-      // Called with new.
-      newObj = this;
-    }
-    else {
-      newObj = vm.createObject(vm.OBJECT.proto);
-    }
-    return newObj;
+  /**
+   * Object (constructor)
+   * 
+   * TODO: Don't know if it works. Probably not.
+   */
+  wrapper = function() {
+//    var newObj;
+//
+//    if (this.parent === vm.OBJECT) { // TODO
+//      throw "new is not supported yet";
+//      // Called with new.
+//      newObj = this;
+//    }
+//    else {
+//      newObj = vm.createObject(vm.OBJECT_PROTO);
+//    }
+    return vm.createObject(vm.OBJECT_PROTO);
   };
-  id = this.createNativeFunction(wrapper, "Object constructor");
-  this.setPropertyByLiteral(id, this.OBJECT.proto, 'prototype', false, false,
+  id = this.createNativeFunction(wrapper, "Object Constructor");
+  this.setPropertyByLiteral(id, this.OBJECT_PROTO, 'prototype', false, false,
       false);
-  this.OBJECT.ctor = id;
+  this.OBJECT_CONSTRUCTOR = id;
 
-  // Function constructor. TODO need to adapt
+  /**
+   * Function (constructor)
+   */
   wrapper = function(var_args) {
 
     var newFunc, code;
@@ -1064,11 +1100,66 @@ RedbankVM.prototype.init = function(mode) {
     // vm.createPrimitive(newFunc.node.length), true);
     return newFunc;
   };
-
-  id = this.createNativeFunction(wrapper, "Function constructor");
-  this.setPropertyByLiteral(id, this.FUNCTION.proto, 'prototype', false, false,
+  id = this.createNativeFunction(wrapper, "Function Constructor");
+  this.setPropertyByLiteral(id, this.FUNCTION_PROTO, 'prototype', false, false,
       false);
-  this.FUNCTION.ctor = id;
+  this.FUNCTION_CONSTRUCTOR = id;
+
+  id = this.createObject(this.OBJECT_PROTO, "global object/scope");
+  this.GLOBAL = id;
+  this.getObject(id).REF.count = Infinity;
+  
+
+  this.setPropertyByLiteral(id, this.UNDEFINED, 'undefined', false, false,
+      false);
+  this.setPropertyByLiteral(id, this.OBJECT_CONSTRUCTOR, 'Object', false,
+      false, false);
+  this.setPropertyByLiteral(id, this.FUNCTION_CONSTRUCTOR, 'Function', false,
+      false, false);
+
+  
+};
+
+/**
+ * init built-in (global) objects and global scope
+ * 
+ * @param mode
+ * 
+ * zero hash table create poison object create vm object create undefined object
+ * create null object create boolean true/false object
+ * 
+ * create Object.prototype create Function.prototype
+ * 
+ */
+RedbankVM.prototype.init = function(mode) {
+
+  var i, id, obj, wrapper;
+  var vm = this;
+
+  // Object.prototype.dummy(), native, for test-only
+  wrapper = function() { // This works
+    console.log("[[ Object.prototype.dummy() called ]]");
+    return vm.UNDEFINED;
+  };
+  id = this.createNativeFunction(wrapper, "Object.prototype.dummy()");
+  this
+      .setPropertyByLiteral(this.OBJECT_PROTO, id, 'dummy', false, false, false);
+
+  // Object.prototype.toString(), native
+  wrapper = function() { // TODO don't know if works
+    return vm.createPrimitive(this.toString());
+  };
+  id = this.createNativeFunction(wrapper, "Object.prototype.toString()");
+  this.setPropertyByLiteral(this.OBJECT_PROTO, id, 'toString', true, false,
+      true);
+
+  // Object.prototype.valueOf(), native
+  wrapper = function() { // TODO don't know if works
+    return vm.createPrimitive(this.valueOf());
+  };
+  id = this.createNativeFunction(wrapper, "Object.prototype.valueOf()");
+  this
+      .setPropertyByLiteral(this.OBJECT_PROTO, id, 'valueOf', true, false, true);
 
   // Create stub functions for apply and call.
   // These are processed as special cases in stepCallExpression.
@@ -1092,16 +1183,6 @@ RedbankVM.prototype.init = function(mode) {
    * this.setProperty(this.FUNCTION, 'valueOf',
    * this.createNativeFunction(wrapper), false, true);
    */
-
-  // Global
-  id = this.createObject(this.OBJECT.proto, "Global Object");
-  obj = this.getObject(id);
-  obj.REF.count = Infinity;
-  this.GLOBAL = id;
-  this.setPropertyByLiteral(this.GLOBAL, this.UNDEFINED, 'undefined', false,
-      false, false);
-
-  this.snapshot();
 };
 
 /**
@@ -1121,6 +1202,13 @@ RedbankVM.prototype.ARGC = function() {
   return this.getObject(id).value;
 };
 
+RedbankVM.prototype.NativeARGC = function() {
+
+  var id = this.Stack[this.Stack.length - 3];
+  this.assertNumber(id);
+  return this.getObject(id).value;
+};
+
 RedbankVM.prototype.indexOfRET = function() {
 
   /**
@@ -1129,6 +1217,13 @@ RedbankVM.prototype.indexOfRET = function() {
 
   var index = this.FP - 3; // now point to argc
   index = index - this.ARGC();
+  return index; // now point to arg0
+};
+
+RedbankVM.prototype.indexOfNativeRET = function() {
+
+  var index = this.Stack.length - 3; // now point to argc
+  index = index - this.NativeARGC();
   return index; // now point to arg0
 };
 
@@ -1189,17 +1284,6 @@ RedbankVM.prototype.assertPropertyHash = function() {
 RedbankVM.prototype.assert_no_leak = function() {
 
   return;
-  // check objects
-  for (var i = 1; i < this.Objects.length; i++) {
-    if (this.Objects[i] !== undefined) {
-      console.log("mem leak @ object id: " + i);
-    }
-  }
-  // check display
-  // check stack
-  if (this.Stack.length > 0) {
-    console.log("mem leak @ stack.");
-  }
 };
 
 /**
@@ -1589,7 +1673,9 @@ RedbankVM.prototype.printstack = function() {
         console.log(i + " : " + id + " (object) ref: " + obj.REF.count);
         break;
       case 'function':
-        console.log(i + " : " + id + " (function) ");
+        var appendix = (obj.nativeFunc !== undefined) ? "[native] " + obj.tag
+            : "non-native";
+        console.log(i + " : " + id + " (function) " + appendix);
         break;
       default:
         throw "unknown type";
@@ -1608,6 +1694,11 @@ RedbankVM.prototype.printLexicals = function() {
   this.assert(this.typeOfObject(fid) === 'function');
 
   var funcObj = this.getObject(fid);
+
+  if (funcObj.nativeFunc !== 'undefined') {
+    return;
+  }
+
   if (funcObj.lexnum === 0 || funcObj.lexicals.length === 0) {
     return;
   }
@@ -1682,6 +1773,45 @@ RedbankVM.prototype.stepCapture = function(bytecode) {
   }
 };
 
+RedbankVM.prototype.stepCall = function() {
+
+  this.assert(this.typeOfObject(this.TOS()) === 'function');
+
+  var fid = this.TOS();
+  var fObj = this.getObject(fid);
+
+  if (fObj.nativeFunc === undefined) {
+    this.PCStack.push(this.PC);
+    this.FPStack.push(this.FP);
+    this.PC = fObj.label;
+    this.FP = this.Stack.length;
+    return;
+  }
+
+  /**
+   * for native call, there is no corresponding RET
+   * 
+   * the native function should return an VM defined value the VM is responsible
+   * for clearing stack like RET is called.
+   */
+  var result = fObj.nativeFunc();
+
+  // save argc before being (possibly) overwritten
+  var argc = this.NativeARGC();
+
+  // overwrite
+  this.set(result, this.id, "Stack", this.indexOfNativeRET());
+
+  this.pop(); // pop function object
+  this.pop(); // pop this object
+
+  // don't pop argc, ret may be popped.
+  // this.pop(); // argc
+  for (var i = 0; i < argc; i++) {
+    this.pop(); // pop params
+  }
+};
+
 RedbankVM.prototype.step = function(code, bytecode) {
   var v, obj;
   var id, index;
@@ -1691,10 +1821,7 @@ RedbankVM.prototype.step = function(code, bytecode) {
   switch (bytecode.op) {
 
   case "CALL":
-    this.PCStack.push(this.PC);
-    this.FPStack.push(this.FP);
-    this.PC = this.getObject(this.TOS()).label;
-    this.FP = this.Stack.length;
+    this.stepCall();
     break;
 
   case "CAPTURE":
@@ -1781,18 +1908,15 @@ RedbankVM.prototype.step = function(code, bytecode) {
 
   case "LITO":
     // create an empty object and push to stack
-    id = this.createObject(this.OBJECT.proto);
+    id = this.createObject(this.OBJECT_PROTO);
     this.push(id);
     break;
 
   case "RET":
     if (this.FP === 0) { // main()
       while (this.Stack.length) {
-        // temp
-        this.assertPropertyHash();
         this.pop();
       }
-      this.assertPropertyHash();
       this.PC = this.code.length; // exit
 
     }
@@ -1963,13 +2087,14 @@ RedbankVM.prototype.step = function(code, bytecode) {
 
 RedbankVM.prototype.run = function(input, testcase, initmode) {
 
+  this.bootstrap();
   this.init(initmode);
 
   this.code = input;
   this.testcase = testcase;
 
   console.log(Common.Format.hline);
-  console.log("[[Start Running ]]");
+  console.log("[[ Start Running ]]");
   console.log(Common.Format.hline);
 
   while (this.PC < this.code.length) {

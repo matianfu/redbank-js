@@ -11,7 +11,7 @@ var JSInterpreter = require("./interpreter.js");
 var ESCodegen_Main = require("escodegen");
 var Compiler = require("./redbank_compiler.js");
 var RedbankVM = require("./redbank_vm.js");
-var Common = require("./redbank_format.js");
+var Common = require("./common.js");
 
 /**
  * constants
@@ -642,6 +642,26 @@ var testcase_internal = {
   internal_cascade : {
     init : Common.InitMode.OBJECT_PROTOTYPE,
     source : 'var a = {}; a.x = {}; a.x.y = 10;',
+  },
+  
+  internal_cyclic : { // NOT really a test, just for observation
+    init : Common.InitMode.OBJECT_PROTOTYPE,
+    source : 'var a = {}; var b = {}; a.x = b; b.y = a;'
+  },
+  
+  object_proto_dummy : {
+    init : Common.InitMode.FULL,
+    source : 'var a = {}; a.dummy();'
+  },
+  
+  new_object : {
+    init : Common.InitMode.FULL,
+    source : 'var a = Object();'
+  },
+  
+  object_expression : {
+    init : Common.InitMode.FULL,
+    source : 'var a = { x : 1, y: 2};'
   }
 };
 
@@ -749,7 +769,7 @@ function emit_as_tcp_client(testcase) {
 }
 
 // run_testsuite(TESTS);
-run_single_in_suite(TESTS, "internal", "internal_cascade");
+run_single_in_suite(TESTS, "internal", "object_expression");
 
 // emit_as_tcp_client(TESTS["basic"]["var_declare_dual"]);
 

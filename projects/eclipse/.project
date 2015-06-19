@@ -20,7 +20,7 @@
 		<link>
 			<name>common.js</name>
 			<type>1</type>
-			<locationURI>PARENT-2-PROJECT_LOC/redbank_format.js</locationURI>
+			<locationURI>PARENT-2-PROJECT_LOC/common.js</locationURI>
 		</link>
 		<link>
 			<name>escodegen.js</name>
