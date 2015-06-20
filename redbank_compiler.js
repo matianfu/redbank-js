@@ -88,8 +88,12 @@ function exprAsVal(expr) {
     }
 
   }
+  else if (pt === "Property") {
+
+  }
   else {
-    throw "exprAsVal: " + pt + " not supported yet";
+    console.log("exprAsVal: " + pt + " not supported yet");
+    throw "error";
   }
 }
 
@@ -698,6 +702,10 @@ FunctionNode.prototype.compileAST = function(ast, silent) {
     this.compileProgram(ast);
     break;
 
+  case "Property":
+    this.compileProperty(ast);
+    break;
+
   case "ReturnStatement":
     this.compileReturnStatement(ast);
     break;
@@ -859,6 +867,14 @@ FunctionNode.prototype.compileFunctionExpression = function(ast) {
 FunctionNode.prototype.compileIdentifier = function(ast) {
 
   var i;
+  
+  if (ast.__parent__.type === "Property" && 
+      ast === ast.__parent__.key) {
+    // treat identifier of Property's key as literal
+    this.emit("LITA", "PROP", ast.name);
+    return;
+  }
+  
   if (ast.__parent__.type === "MemberExpression") {
     if (ast === ast.__parent__.property) {
       // treat identifier as operator
@@ -955,7 +971,13 @@ FunctionNode.prototype.compileMemberExpression = function(ast) {
 // properties: [ Property ];
 // }
 FunctionNode.prototype.compileObjectExpression = function(ast) {
+  
+  // place an empty object on stack
   this.emit("LITO");
+  
+  for (var i = 0; i < ast.properties.length; i++) {
+    this.compileAST(ast.properties[i]);
+  }
 };
 
 // interface Program <: Node {
@@ -966,6 +988,23 @@ FunctionNode.prototype.compileProgram = function(ast) {
   for (var i = 0; i < ast.body.length; i++) {
     this.compileAST(ast.body[i]);
   }
+};
+
+// interface Property <: Node {
+// type: "Property";
+// key: Literal | Identifier;
+// value: Expression;
+// kind: "init" | "get" | "set";
+// }
+FunctionNode.prototype.compileProperty = function(ast) {
+
+  if (ast.kind === "get" || ast.kind === "set") {
+    throw "not supported yet.";
+  }
+
+  this.compileAST(ast.key);
+  this.compileAST(ast.value);
+  this.emit("STOREP");
 };
 
 // interface ReturnStatement <: Statement {

@@ -305,6 +305,10 @@ RedbankVM.prototype.uninternString = function(id) {
  * @param index
  */
 RedbankVM.prototype.incrREF = function(id, object, name, index) {
+  
+//  if (name === 'nextInSlot') {
+//    throw 'error';
+//  }
 
   if (object === undefined) {
     throw "error";
@@ -382,6 +386,7 @@ RedbankVM.prototype.decrREF = function(id, object, name, index) {
     case 'number':
       break;
     case 'string':
+      this.decrREF(obj.nextInSlot, id, 'nextInSlot');
       break;
 
     case 'link':
@@ -634,7 +639,7 @@ RedbankVM.prototype.createObject = function(proto, tag) {
   if (this.FUNCTION_PROTO !== undefined && this.isa(id, this.FUNCTION_PROTO)) {
     obj.type = 'function';
     var pid = this.createObject(this.OBJECT_PROTO);
-    this.setPropertyByLiteral(id, pid, 'prototype', true, false, false);
+    this.setPropertyByLiteral(pid, id, 'prototype', true, false, false);
   }
 
   // // Arrays have length.
@@ -669,7 +674,7 @@ RedbankVM.prototype.createFunction = function(label, lexnum, length) {
   }
 
   var l = this.createPrimitive(length);
-  this.setPropertyByLiteral(id, l, 'length', true, true, true);
+  this.setPropertyByLiteral(l, id, 'length', true, true, true);
   return id;
 };
 
@@ -695,7 +700,7 @@ RedbankVM.prototype.createNativeFunction = function(nativeFunc, tag) {
 
   // create length property
   var id = this.createPrimitive(nativeFunc.length);
-  this.setPropertyByLiteral(func, id, 'length', false, false, false);
+  this.setPropertyByLiteral(id, func, 'length', false, false, false);
   return func;
 };
 
@@ -732,7 +737,7 @@ RedbankVM.prototype.deepSearchProperty = function(object, name) {
   }
 };
 
-RedbankVM.prototype.setProperty = function(parent, child, name, writable,
+RedbankVM.prototype.setProperty = function(child, parent, name, writable,
     enumerable, configurable) {
 
   var obj;
@@ -866,11 +871,16 @@ RedbankVM.prototype.deleteProperty = function(property) {
   }
 };
 
-RedbankVM.prototype.setPropertyByLiteral = function(parent, child, nameLiteral,
+RedbankVM.prototype.setPropertyByLiteral = function(child, parent, nameLiteral,
     writable, enumerable, configurable) {
+  
+  var type = this.typeOfObject(parent);
+  if (type !== 'object' && type !== 'function') {
+    throw "error";
+  }
 
   var name = this.createPrimitive(nameLiteral);
-  this.setProperty(parent, child, name, writable, enumerable, configurable);
+  this.setProperty(child, parent, name, writable, enumerable, configurable);
 };
 
 RedbankVM.prototype.getProperty = function(parent, name) {
@@ -918,7 +928,7 @@ RedbankVM.prototype.createGlobal = function() {
   obj.REF.count = Infinity;
 
   this.GLOBAL = id;
-  this.setPropertyByLiteral(this.GLOBAL, this.UNDEFINED, 'undefined', false,
+  this.setPropertyByLiteral(this.UNDEFINED, this.GLOBAL, 'undefined', false,
       false, false);
 };
 
@@ -1110,11 +1120,11 @@ RedbankVM.prototype.bootstrap = function() {
   this.getObject(id).REF.count = Infinity;
   
 
-  this.setPropertyByLiteral(id, this.UNDEFINED, 'undefined', false, false,
+  this.setPropertyByLiteral(this.UNDEFINED, id, 'undefined', false, false,
       false);
-  this.setPropertyByLiteral(id, this.OBJECT_CONSTRUCTOR, 'Object', false,
+  this.setPropertyByLiteral(this.OBJECT_CONSTRUCTOR, id, 'Object', false,
       false, false);
-  this.setPropertyByLiteral(id, this.FUNCTION_CONSTRUCTOR, 'Function', false,
+  this.setPropertyByLiteral(this.FUNCTION_CONSTRUCTOR, id, 'Function', false,
       false, false);
 
   
@@ -1143,14 +1153,14 @@ RedbankVM.prototype.init = function(mode) {
   };
   id = this.createNativeFunction(wrapper, "Object.prototype.dummy()");
   this
-      .setPropertyByLiteral(this.OBJECT_PROTO, id, 'dummy', false, false, false);
+      .setPropertyByLiteral(id, this.OBJECT_PROTO, 'dummy', false, false, false);
 
   // Object.prototype.toString(), native
   wrapper = function() { // TODO don't know if works
     return vm.createPrimitive(this.toString());
   };
   id = this.createNativeFunction(wrapper, "Object.prototype.toString()");
-  this.setPropertyByLiteral(this.OBJECT_PROTO, id, 'toString', true, false,
+  this.setPropertyByLiteral(id, this.OBJECT_PROTO, 'toString', true, false,
       true);
 
   // Object.prototype.valueOf(), native
@@ -1159,7 +1169,7 @@ RedbankVM.prototype.init = function(mode) {
   };
   id = this.createNativeFunction(wrapper, "Object.prototype.valueOf()");
   this
-      .setPropertyByLiteral(this.OBJECT_PROTO, id, 'valueOf', true, false, true);
+      .setPropertyByLiteral(id, this.OBJECT_PROTO, 'valueOf', true, false, true);
 
   // Create stub functions for apply and call.
   // These are processed as special cases in stepCallExpression.
@@ -1619,7 +1629,7 @@ RedbankVM.prototype.storeOrAssignToObject = function(mode) {
   this.assertString(this.NOS());
   this.assertJSObject(this.ThirdOS());
 
-  this.setProperty(this.ThirdOS(), this.TOS(), this.NOS(), true, true, true);
+  this.setProperty(this.TOS(), this.ThirdOS(), this.NOS(), true, true, true);
 
   if (mode === 'store') {
     this.pop();
@@ -1966,6 +1976,17 @@ RedbankVM.prototype.step = function(code, bytecode) {
       throw "don't known how to store";
     }
     // this.storeOrAssign('store');
+    break;
+  
+  case "STOREP": // object key value -- object
+    
+    this.assertNonAddr(this.TOS());
+    this.assertString(this.NOS());
+    this.assertJSObject(this.ThirdOS());
+    this.setProperty(this.TOS(), this.ThirdOS(), this.NOS(), true, true, true);
+    
+    this.pop();
+    this.pop();
     break;
 
   case "TEST":

@@ -170,7 +170,7 @@ function run_testsuite(testsuite) {
 function run_single_in_suite(testsuite, group, testcase) {
 
   generate_testcase_name(testsuite);
-  run_case(testsuite[group][testcase]);
+  run_case(testsuite[group][testcase], true);
 }
 
 /*******************************************************************************
@@ -662,6 +662,10 @@ var testcase_internal = {
   object_expression : {
     init : Common.InitMode.FULL,
     source : 'var a = { x : 1, y: 2};'
+  },
+  
+  object_expression_getter : {
+    source : 'var a = { get b() { return 1; }};'
   }
 };
 
