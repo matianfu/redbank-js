@@ -2,6 +2,11 @@
  * 
  * Virtual Machine
  * 
+ * 
+ * TOS NOS ThirdOS temp ... temp local [local size - 1] ... local [1] FP ->
+ * local [0] function FP - 1 this FP - 2 argc FP - 3 param [argc - 1] ... param
+ * [0]
+ * 
  ******************************************************************************/
 
 var Common = require('./common.js');
@@ -205,15 +210,15 @@ RedbankVM.prototype.isa = function(child, parent) {
   if (typeof child !== 'number' || typeof parent !== 'number') {
     throw "wrong input";
   }
-
   if (child === 0) {
     return false;
   }
-
+  if (child === parent) {
+    return true;
+  }
   if (this.Objects[child].PROTOTYPE === parent) {
     return true;
   }
-
   child = this.Objects[child].PROTOTYPE;
   return this.isa(child, parent);
 };
@@ -305,10 +310,10 @@ RedbankVM.prototype.uninternString = function(id) {
  * @param index
  */
 RedbankVM.prototype.incrREF = function(id, object, name, index) {
-  
-//  if (name === 'nextInSlot') {
-//    throw 'error';
-//  }
+
+  // if (name === 'nextInSlot') {
+  // throw 'error';
+  // }
 
   if (object === undefined) {
     throw "error";
@@ -537,6 +542,113 @@ RedbankVM.prototype.createProperty = function(parent, child, name, w, e, c) {
 
 };
 
+RedbankVM.prototype.createUndefined = function() {
+
+  var obj = {
+    type : 'undefined',
+    REF : {
+      count : 0,
+      referrer : [],
+    },
+
+    isPrimitive : true,
+    tag : 'undefined',
+  };
+  return this.register(obj);
+};
+
+RedbankVM.prototype.createNull = function() {
+
+  var obj = {
+    type : 'null',
+    REF : {
+      count : 0,
+      referrer : [],
+    },
+
+    isPrimitive : true,
+    tag : 'null',
+  };
+  return this.register(obj);
+};
+
+RedbankVM.prototype.createTrue = function() {
+
+  var obj = {
+    type : 'boolean',
+    REF : {
+      count : 0,
+      referrer : [],
+    },
+
+    bValue : true,
+
+    isPrimitive : true,
+    tag : 'true',
+  };
+  return this.register(obj);
+};
+
+RedbankVM.prototype.createFalse = function() {
+
+  var obj = {
+    type : 'boolean',
+    REF : {
+      count : 0,
+      referrer : [],
+    },
+
+    bValue : false,
+
+    isPrimitive : true,
+    tag : 'false',
+  }
+  return this.register(obj);
+};
+
+RedbankVM.prototype.createNumber = function(val) {
+
+  if (typeof val !== 'number') {
+    throw 'error';
+  }
+
+  var obj = {
+    type : 'number',
+    REF : {
+      count : 0,
+      referrer : [],
+    },
+
+    nValue : val,
+
+    isPrimitive : true,
+  }
+  return this.register(obj);
+};
+
+RedbankVM.prototype.createString = function(str) {
+
+  if (typeof val !== 'string') {
+    throw 'error';
+  }
+
+  var obj = {
+    type : 'string',
+    REF : {
+      count : 0,
+      referrer : [],
+    },
+
+    nValue : val,
+
+    isPrimitive : true,
+    
+    isInterned : false,
+    hash : 0 >>> 0
+  }
+  return this.register(obj);
+}
+
 /**
  * Create a primitive Javascript value object
  * 
@@ -642,17 +754,16 @@ RedbankVM.prototype.createObject = function(proto, tag) {
     this.setPropertyByLiteral(pid, id, 'prototype', true, false, false);
   }
 
-  // // Arrays have length.
-  // if (this.isa(obj, this.ARRAY)) {
-  // obj.length = 0;
-  // obj.toString = function() {
-  // var strs = [];
-  // for (var i = 0; i < this.length; i++) {
-  // strs[i] = this.properties[i].toString();
-  // }
-  // return strs.join(',');
-  // };
-  // };
+  if (this.ARRAY_PROTO !== undefined && this.isa(id, this.ARRAY_PROTO)) {
+    // obj.length = 0;
+    // obj.toString = function() {
+    // var strs = [];
+    // for (var i = 0; i < this.length; i++) {
+    // strs[i] = this.properties[i].toString();
+    // }
+    // return strs.join(',');
+    // };
+  }
 
   return id;
 };
@@ -704,8 +815,27 @@ RedbankVM.prototype.createNativeFunction = function(nativeFunc, tag) {
   return func;
 };
 
-RedbankVM.prototype.createProperty = function() {
+RedbankVM.prototype.createProperty = function(parent, writable, enumerable,
+    configurable) {
 
+  var property = {
+
+    type : 'property',
+
+    REF : {
+      count : 0,
+      referrer : [],
+    },
+
+    children : [],
+    nextInObject : 0,
+
+    parent : parent,
+
+    writable : (writable === true) ? true : false,
+    enumerable : (enumerable === true) ? true : false,
+    configurable : (configurable === true) ? true : false,
+  };
 };
 
 RedbankVM.prototype.searchProperty = function(object, name) {
@@ -821,6 +951,7 @@ RedbankVM.prototype.setProperty = function(child, parent, name, writable,
       },
 
       parent : parent,
+
       writable : (writable === true) ? true : false,
       enumerable : (enumerable === true) ? true : false,
       configurable : (configurable === true) ? true : false,
@@ -873,7 +1004,7 @@ RedbankVM.prototype.deleteProperty = function(property) {
 
 RedbankVM.prototype.setPropertyByLiteral = function(child, parent, nameLiteral,
     writable, enumerable, configurable) {
-  
+
   var type = this.typeOfObject(parent);
   if (type !== 'object' && type !== 'function') {
     throw "error";
@@ -892,6 +1023,11 @@ RedbankVM.prototype.getProperty = function(parent, name) {
   }
   var id = this.getObject(prop).child;
   return (id === 0) ? this.UNDEFINED : id;
+};
+
+RedbankVM.prototype.createJSArray = function() {
+
+  var arr = this.createObject(this.ARRAY_PROTO);
 };
 
 RedbankVM.prototype.snapshot = function() {
@@ -947,15 +1083,20 @@ RedbankVM.prototype.bootstrap = function() {
     this.PropertyHash[i] = 0;
   }
 
-  // reference to global scope constant
-  this.UNDEFINED = undefined;
+  // value constant
+  this.UNDEFINED = undefined; // also a global property
   this.NULL = undefined;
   this.TRUE = undefined;
   this.FALSE = undefined;
+
+  // global property (Number)
   this.INFINITY = undefined;
   this.NAN = undefined;
+
+  // built-in prototypes
   this.OBJECT_PROTO = undefined;
   this.FUNCTION_PROTO = undefined;
+  this.ARRAY_PROTO = undefined;
   this.GLOBAL = undefined;
 
   // poison
@@ -1024,10 +1165,8 @@ RedbankVM.prototype.bootstrap = function() {
    * __proto__, <function scope>
    * 
    * ATTENTION: this object does NOT have 'prototype' property. When invoked
-   * with 'new'
-   * 
-   * > new Function.prototype()
-   * > TypeError: function Empty() {} is not a constructor
+   * with 'new' > new Function.prototype() > TypeError: function Empty() {} is
+   * not a constructor
    * 
    */
   obj = {
@@ -1054,16 +1193,16 @@ RedbankVM.prototype.bootstrap = function() {
    * TODO: Don't know if it works. Probably not.
    */
   wrapper = function() {
-//    var newObj;
-//
-//    if (this.parent === vm.OBJECT) { // TODO
-//      throw "new is not supported yet";
-//      // Called with new.
-//      newObj = this;
-//    }
-//    else {
-//      newObj = vm.createObject(vm.OBJECT_PROTO);
-//    }
+    // var newObj;
+    //
+    // if (this.parent === vm.OBJECT) { // TODO
+    // throw "new is not supported yet";
+    // // Called with new.
+    // newObj = this;
+    // }
+    // else {
+    // newObj = vm.createObject(vm.OBJECT_PROTO);
+    // }
     return vm.createObject(vm.OBJECT_PROTO);
   };
   id = this.createNativeFunction(wrapper, "Object Constructor");
@@ -1115,10 +1254,28 @@ RedbankVM.prototype.bootstrap = function() {
       false);
   this.FUNCTION_CONSTRUCTOR = id;
 
+  /**
+   * Array.prototype
+   */
+  obj = {
+    type : 'object',
+    REF : {
+      count : Infinity,
+      referrer : [],
+    },
+    PROTOTYPE : 0,
+    property : 0,
+    isPrimitive : false,
+    isArray : true,
+
+    tag : "Object.prototype",
+  };
+  id = this.register(obj);
+  this.ARRAY_PROTO = id;
+
   id = this.createObject(this.OBJECT_PROTO, "global object/scope");
   this.GLOBAL = id;
   this.getObject(id).REF.count = Infinity;
-  
 
   this.setPropertyByLiteral(this.UNDEFINED, id, 'undefined', false, false,
       false);
@@ -1127,7 +1284,6 @@ RedbankVM.prototype.bootstrap = function() {
   this.setPropertyByLiteral(this.FUNCTION_CONSTRUCTOR, id, 'Function', false,
       false, false);
 
-  
 };
 
 /**
@@ -1542,6 +1698,9 @@ RedbankVM.prototype.fetcha = function() {
   }
 };
 
+/**
+ * parent, prop -- child
+ */
 RedbankVM.prototype.fetcho = function() {
 
   this.assertString(this.TOS());
@@ -1550,6 +1709,18 @@ RedbankVM.prototype.fetcho = function() {
   var id = this.getProperty(this.NOS(), this.TOS());
   this.set(id, this.id, 'Stack', this.indexOfNOS());
   this.pop();
+};
+
+/**
+ * parent, prop -- parent, child
+ */
+RedbankVM.prototype.fetchof = function() {
+
+  this.assertString(this.TOS());
+  this.assertJSObject(this.NOS());
+
+  var id = this.getProperty(this.NOS(), this.TOS());
+  this.set(id, this.id, 'Stack', this.indexOfTOS());
 };
 
 /**
@@ -1822,6 +1993,167 @@ RedbankVM.prototype.stepCall = function() {
   }
 };
 
+RedbankVM.prototype.stepBinop = function(binop) {
+
+  // var comp = this.comp(leftSide, rightSide);
+  // if (node.operator == '==' || node.operator == '!=') {
+  // value = comp === 0;
+  // if (node.operator == '!=') {
+  // value = !value;
+  // }
+  // } else if (node.operator == '===' || node.operator == '!==') {
+  // if (leftSide.isPrimitive && rightSide.isPrimitive) {
+  // value = leftSide.data === rightSide.data;
+  // } else {
+  // value = leftSide === rightSide;
+  // }
+  // if (node.operator == '!==') {
+  // value = !value;
+  // }
+  // } else if (node.operator == '>') {
+  // value = comp == 1;
+  // } else if (node.operator == '>=') {
+  // value = comp == 1 || comp === 0;
+  // } else if (node.operator == '<') {
+  // value = comp == -1;
+  // } else if (node.operator == '<=') {
+  // value = comp == -1 || comp === 0;
+  // } else if (node.operator == '+') {
+  // if (leftSide.type == 'string' || rightSide.type == 'string') {
+  // var leftValue = leftSide.toString();
+  // var rightValue = rightSide.toString();
+  // } else {
+  // var leftValue = leftSide.toNumber();
+  // var rightValue = rightSide.toNumber();
+  // }
+  // value = leftValue + rightValue;
+  // } else if (node.operator == 'in') {
+  // value = this.hasProperty(rightSide, leftSide);
+  // } else {
+  // var leftValue = leftSide.toNumber();
+  // var rightValue = rightSide.toNumber();
+  // if (node.operator == '-') {
+  // value = leftValue - rightValue;
+  // } else if (node.operator == '*') {
+  // value = leftValue * rightValue;
+  // } else if (node.operator == '/') {
+  // value = leftValue / rightValue;
+  // } else if (node.operator == '%') {
+  // value = leftValue % rightValue;
+  // } else if (node.operator == '&') {
+  // value = leftValue & rightValue;
+  // } else if (node.operator == '|') {
+  // value = leftValue | rightValue;
+  // } else if (node.operator == '^') {
+  // value = leftValue ^ rightValue;
+  // } else if (node.operator == '<<') {
+  // value = leftValue << rightValue;
+  // } else if (node.operator == '>>') {
+  // value = leftValue >> rightValue;
+  // } else if (node.operator == '>>>') {
+  // value = leftValue >>> rightValue;
+  // } else {
+  // throw 'Unknown binary operator: ' + node.operator;
+  // }
+  // }
+
+  var left = this.NOS();
+  var right = this.TOS();
+  var leftObj = this.getObject(left);
+  var rightObj = this.getObject(right);
+
+  var id, val;
+
+  if (binop === '+' || binop === '-' || binop === '*' || binop === '/'
+      || binop === '%') {
+
+    if (leftObj.isPrimitive !== true || rightObj.isPrimitive !== true) {
+      val = this.NAN;
+    }
+    else {
+      if (binop === '+') {
+        val = leftObj.value + rightObj.value;
+      }
+      else if (binop === '-') {
+        val = leftObj.value - rightObj.value;
+      }
+      else if (binop === '*') {
+        val = leftObj.value * rightObj.value;
+      }
+      else if (binop === '/') {
+        val = leftObj.value / rightObj.value;
+      }
+      else if (binop === '%') {
+        val = leftObj.value % rightObj.value;
+      }
+      else {
+        throw 'error';
+      }
+
+      if (isNaN(val)) {
+        id = this.NAN;
+      }
+      else if (val === Infinity) {
+        id = this.INFINITY;
+      }
+      else {
+        id = this.createPrimitive(val);
+      }
+
+      this.pop();
+      this.pop();
+      this.push(id);
+
+      return;
+    }
+  }
+  else if (binop === '===') {
+    this.assertNonAddr(this.TOS());
+    this.assertNonAddr(this.NOS());
+
+    var equality;
+
+    if (this.typeOfObject(this.TOS()) !== this.typeOfObject(this.NOS())) {
+      equality = false;
+    }
+    else {
+      var type = this.typeOfObject(this.TOS());
+      if (type === 'undefined') {
+        equality = true;
+      }
+      else if (type === 'boolean') {
+        equality = (this.TOS() === this.NOS());
+      }
+      else if (type === 'number') {
+        equality = (this.getObject(this.TOS()).value === this.getObject(this
+            .NOS()).value);
+      }
+      else if (type === 'string') { // TODO now all strings are interned
+        equality = (this.TOS() === this.NOS());
+      }
+      else if (type === 'object' || type === "function") {
+        equality = (this.TOS() === this.NOS());
+      }
+      else {
+        throw "not supported for equality";
+      }
+    }
+
+    this.pop();
+    this.pop();
+
+    if (equality) {
+      this.push(this.TRUE);
+    }
+    else {
+      this.push(this.FALSE);
+    }
+  }
+  else {
+    throw "not supported yet";
+  }
+};
+
 RedbankVM.prototype.step = function(code, bytecode) {
   var v, obj;
   var id, index;
@@ -1829,6 +2161,15 @@ RedbankVM.prototype.step = function(code, bytecode) {
   var opd1, opd2;
 
   switch (bytecode.op) {
+
+  case "ARRAY":
+    id = this.createObject(this.ARRAY_PROTO);
+    this.push(id);
+    break;
+
+  case "BINOP":
+    this.stepBinop(bytecode.arg1);
+    break;
 
   case "CALL":
     this.stepCall();
@@ -1842,12 +2183,16 @@ RedbankVM.prototype.step = function(code, bytecode) {
     this.pop();
     break;
 
-  case "FETCHA": // addr -- n1
+  case "FETCHA": // addr -- obj
     this.fetcha();
     break;
 
-  case "FETCHO": // O1, prop1 -- O2
+  case "FETCHO": // parent, prop -- child
     this.fetcho();
+    break;
+
+  case "FETCHOF": // parent, prop -- parent, child
+    this.fetchof();
     break;
 
   case "FUNC": // -- f1
@@ -1907,6 +2252,10 @@ RedbankVM.prototype.step = function(code, bytecode) {
     val = bytecode.arg1;
     id = this.createPrimitive(val);
     this.push(id);
+    break;
+
+  case "LITG":
+    this.push(this.GLOBAL);
     break;
 
   case "LITN":
@@ -1975,16 +2324,15 @@ RedbankVM.prototype.step = function(code, bytecode) {
     else {
       throw "don't known how to store";
     }
-    // this.storeOrAssign('store');
     break;
-  
+
   case "STOREP": // object key value -- object
-    
+
     this.assertNonAddr(this.TOS());
     this.assertString(this.NOS());
     this.assertJSObject(this.ThirdOS());
     this.setProperty(this.TOS(), this.ThirdOS(), this.NOS(), true, true, true);
-    
+
     this.pop();
     this.pop();
     break;
@@ -2011,36 +2359,8 @@ RedbankVM.prototype.step = function(code, bytecode) {
     }
     break;
 
-  case "+":
-    // assert, only number supported up to now
-    this.assertNumber(this.TOS());
-    this.assertNumber(this.NOS());
-
-    v = this.getObject(this.TOS()).value + this.getObject(this.NOS()).value;
-
-    // pop operand
-    this.pop();
-    this.pop();
-
-    // create new value object
-    id = this.createPrimitive(v);
-
-    // push result on stack
-    this.push(id);
-    break;
-
-  case "*":
-    // assert, only number supported up to now
-    this.assertNumber(this.TOS());
-    this.assertNumber(this.NOS());
-
-    v = this.getObject(this.TOS()).value * this.getObject(this.NOS()).value;
-
-    // pop operand
-    this.pop();
-    this.pop();
-
-    id = this.createPrimitive(v);
+  case "THIS":
+    id = this.Stack[this.FP - 2];
     this.push(id);
     break;
 
@@ -2055,50 +2375,6 @@ RedbankVM.prototype.step = function(code, bytecode) {
       throw "don't known how to assign";
     }
     // this.storeOrAssign('assign');
-    break;
-
-  case '===':
-    this.assertNonAddr(this.TOS());
-    this.assertNonAddr(this.NOS());
-
-    var equality;
-
-    if (this.typeOfObject(this.TOS()) !== this.typeOfObject(this.NOS())) {
-      equality = false;
-    }
-    else {
-      var type = this.typeOfObject(this.TOS());
-      if (type === 'undefined') {
-        equality = true;
-      }
-      else if (type === 'boolean') {
-        equality = (this.TOS() === this.NOS());
-      }
-      else if (type === 'number') {
-        equality = (this.getObject(this.TOS()).value === this.getObject(this
-            .NOS()).value);
-      }
-      else if (type === 'string') { // TODO now all strings are interned
-        equality = (this.TOS() === this.NOS());
-      }
-      else if (type === 'object' || type === "function") {
-        equality = (this.TOS() === this.NOS());
-      }
-      else {
-        throw "not supported for equality";
-      }
-    }
-
-    this.pop();
-    this.pop();
-
-    if (equality) {
-      this.push(this.TRUE);
-    }
-    else {
-      this.push(this.FALSE);
-    }
-
     break;
 
   default:
@@ -2133,9 +2409,7 @@ RedbankVM.prototype.run = function(input, testcase, initmode) {
 
     // like the real
     this.PC++;
-
     this.assertPropertyHash();
-
     this.step(this.code, bytecode);
   }
 

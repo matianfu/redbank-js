@@ -637,6 +637,14 @@ FunctionNode.prototype.printAllUnresolved = function() {
 
 // /////////////////////////////////////////////////////////////////////////////
 
+// interface ArrayExpression <: Expression {
+// type: "ArrayExpression";
+// elements: [ Expression | null ];
+// }
+FunctionNode.prototype.compileArrayExpression = function(ast) {
+  this.emit("ARRAY");
+};
+
 // interface AssignmentExpression <: Expression {
 // type: "AssignmentExpression";
 // operator: AssignmentOperator;
@@ -654,6 +662,10 @@ FunctionNode.prototype.compileAST = function(ast, silent) {
   indent_incr();
 
   switch (ast.type) {
+  case "ArrayExpression":
+    this.compileArrayExpression(ast);
+    break;
+
   case "AssignmentExpression":
     this.compileAssignmentExpression(ast);
     break;
@@ -710,6 +722,10 @@ FunctionNode.prototype.compileAST = function(ast, silent) {
     this.compileReturnStatement(ast);
     break;
 
+  case "ThisExpression":
+    this.compileThisExpression(ast);
+    break;
+
   case "VariableDeclaration":
     this.compileVariableDeclaration(ast);
     break;
@@ -737,6 +753,8 @@ FunctionNode.prototype.compileBinaryExpression = function(ast) {
 
   this.compileAST(ast.left);
   this.compileAST(ast.right);
+  this.emit("BINOP", ast.operator);
+  return;
 
   switch (ast.operator) {
   case '+':
@@ -793,9 +811,10 @@ FunctionNode.prototype.compileCallExpression = function(ast) {
   // put argc
   this.emit("LITC", ast.arguments.length);
 
-  // put this
-  // TODO pretend undefined now
-  this.emit("LITN", 1);
+  // put this as global
+  if (ast.callee.type !== 'MemberExpression') {
+    this.emit("LITG");
+  }
 
   // put callee, may evaluate to lvalue
   this.compileAST(ast.callee);
@@ -867,14 +886,13 @@ FunctionNode.prototype.compileFunctionExpression = function(ast) {
 FunctionNode.prototype.compileIdentifier = function(ast) {
 
   var i;
-  
-  if (ast.__parent__.type === "Property" && 
-      ast === ast.__parent__.key) {
+
+  if (ast.__parent__.type === "Property" && ast === ast.__parent__.key) {
     // treat identifier of Property's key as literal
     this.emit("LITA", "PROP", ast.name);
     return;
   }
-  
+
   if (ast.__parent__.type === "MemberExpression") {
     if (ast === ast.__parent__.property) {
       // treat identifier as operator
@@ -961,9 +979,26 @@ FunctionNode.prototype.compileLiteral = function(ast) {
 FunctionNode.prototype.compileMemberExpression = function(ast) {
   this.compileAST(ast.object);
   this.compileAST(ast.property);
-  if (exprAsVal(ast)) {
+
+  if (ast.__parent__.type === 'CallExpression' && ast === ast.__parent__.callee) {
+    this.emit("FETCHOF");
+  }
+  else if (exprAsVal(ast)) {
     this.emit("FETCHO");
   }
+};
+
+// interface NewExpression <: Expression {
+// type: "NewExpression";
+// callee: Expression;
+// arguments: [ Expression ];
+// }
+FunctionNode.prototype.compileNewExpression = function(ast) {
+  // put arguments
+  // put function
+  // put "prototype" property
+  // load
+  // 
 };
 
 // interface ObjectExpression <: Expression {
@@ -971,10 +1006,10 @@ FunctionNode.prototype.compileMemberExpression = function(ast) {
 // properties: [ Property ];
 // }
 FunctionNode.prototype.compileObjectExpression = function(ast) {
-  
+
   // place an empty object on stack
   this.emit("LITO");
-  
+
   for (var i = 0; i < ast.properties.length; i++) {
     this.compileAST(ast.properties[i]);
   }
@@ -1019,6 +1054,13 @@ FunctionNode.prototype.compileReturnStatement = function(ast) {
     this.compileAST(ast.argument);
     this.emit("RET", "RESULT");
   }
+};
+
+// interface ThisExpression <: Expression {
+// type: "ThisExpression";
+// }
+FunctionNode.prototype.compileThisExpression = function(ast) {
+  this.emit("THIS");
 };
 
 // interface VariableDeclaration <: Declaration {

@@ -564,7 +564,9 @@ var testcase_boolean = {
       // assert_stack_slot_boolean_value(vm, 0, false);
       vm.assertStackSlotBooleanValue(0, false);
     }
-  }
+  },
+  
+  
 };
 
 var testcase_control = {
@@ -612,6 +614,33 @@ var testcase_object = {
   }
 };
 
+var testcase_jsthis = {
+
+  basic : {
+    source : 'var a;                                          '
+        + 'var b = { x : 1, y : function(z) { this.x = z; } };'
+        + 'b.y(123);                                          '
+        + 'a = b.x;                                           '
+        + 'rb_test("test");                                   ',
+    test : function(vm) {
+      vm.assertStackSlotNumberValue(0, 123);
+    }
+  }
+};
+
+var testcase_jsnew = {
+
+  basic : {
+    source : 'var a; var b = function() {};                   '
+        + 'b.prototype = {x : 1};                             '
+        + 'var c = new b();'
+  },
+  confused : {
+    source : 'var a = { x : function(){this.y = 1},};'
+        + 'var b = new a.x();                          '
+  }
+};
+
 var testcase_global = {
   global_undefined : {
     source : 'var a = undefined;',
@@ -630,42 +659,46 @@ var testcase_internal = {
 
     }
   },
-  
+
   internal_two_properties : {
     init : Common.InitMode.OBJECT_PROTOTYPE,
     source : 'var a = {}; a.x = 10; a.y = 20;',
-    test : function (vm) {
-      
+    test : function(vm) {
+
     }
   },
-  
+
   internal_cascade : {
     init : Common.InitMode.OBJECT_PROTOTYPE,
     source : 'var a = {}; a.x = {}; a.x.y = 10;',
   },
-  
+
   internal_cyclic : { // NOT really a test, just for observation
     init : Common.InitMode.OBJECT_PROTOTYPE,
     source : 'var a = {}; var b = {}; a.x = b; b.y = a;'
   },
-  
+
   object_proto_dummy : {
     init : Common.InitMode.FULL,
     source : 'var a = {}; a.dummy();'
   },
-  
+
   new_object : {
     init : Common.InitMode.FULL,
     source : 'var a = Object();'
   },
-  
+
   object_expression : {
     init : Common.InitMode.FULL,
     source : 'var a = { x : 1, y: 2};'
   },
-  
-  object_expression_getter : {
-    source : 'var a = { get b() { return 1; }};'
+
+  // object_expression_getter : {
+  // source : 'var a = { get b() { return 1; }};'
+  // }
+
+  empty_array : {
+    source : 'var a = [];'
   }
 };
 
@@ -688,7 +721,9 @@ var TESTS = {
   control : testcase_control,
   object : testcase_object,
   global : testcase_global,
-  internal : testcase_internal,
+//  internal : testcase_internal,
+//  jsthis : testcase_jsthis,
+//  jsnew : testcase_jsnew,
 };
 
 // run_testsuite(TESTS);
@@ -772,15 +807,15 @@ function emit_as_tcp_client(testcase) {
   });
 }
 
-// run_testsuite(TESTS);
-run_single_in_suite(TESTS, "internal", "object_expression");
+run_testsuite(TESTS);
+// run_single_in_suite(TESTS, "func", "func_invoke");
 
 // emit_as_tcp_client(TESTS["basic"]["var_declare_dual"]);
 
 // var runner = new SocketTestRunner(TESTS, "basic");
 // runner.startTcpClient();
 
-//var source = ""; 
-//var interpreter = JSInterpreter.BuildInterpreter(source);
-//interpreter.run();
+// var source = "";
+// var interpreter = JSInterpreter.BuildInterpreter(source);
+// interpreter.run();
 
