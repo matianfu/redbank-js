@@ -1712,7 +1712,6 @@ Interpreter.prototype.setValue = function(left, value) {
 };
 
 // Functions to handle each node type.
-
 Interpreter.prototype.stepArrayExpression = function() {
   var state = this.stateStack[0];
   var node = state.node;

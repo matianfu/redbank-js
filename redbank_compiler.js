@@ -164,6 +164,13 @@ function populate_parent(astroot) {
 
     for ( var prop in node) {
       if (node.hasOwnProperty(prop)) {
+
+        // skip cyclic reference
+        // at least for try-statement
+        if (prop === '__parent__') {
+          continue;
+        }
+
         var child = node[prop];
         if (Array.isArray(child)) {
           for (var i = 0; i < child.length; i++) {
@@ -255,7 +262,7 @@ FunctionNode.prototype.emitJUMP = function(to) {
  *          label for false
  */
 FunctionNode.prototype.emitJUMPC = function(t, f) {
-  this.emit("JUMPC", t, f);
+  this.emit("JUMPC", f);
 };
 
 FunctionNode.prototype.emitLabel = function(label) {
@@ -355,8 +362,16 @@ FunctionNode.prototype.fillIdentifiers = function() {
     // recursive
     for (name in astnode) {
       if (astnode.hasOwnProperty(name)) {
+
         if (name === "__parent__" || name === "fnode") {
           continue;
+        }
+
+        // bypass spider-monkey specific try/catch handlers
+        if (astnode.type === "TryStatement") {
+          if (name === "handlers" || name === "guardedHandlers") {
+            continue;
+          }
         }
 
         prop = astnode[name];
@@ -388,7 +403,7 @@ FunctionNode.prototype.fillIdentifiers = function() {
 };
 
 /**
- * This function can only be used in pre-visitor
+ * This function can only be used in pre-order visitor
  * 
  * It requires all ancestors have proccessed lexicals already
  */
@@ -682,6 +697,10 @@ FunctionNode.prototype.compileAST = function(ast, silent) {
     this.compileCallExpression(ast);
     break;
 
+  case "CatchClause":
+    this.compileCatchClause(ast);
+    break;
+
   case "ExpressionStatement":
     this.compileExpressionStatement(ast);
     break;
@@ -726,6 +745,14 @@ FunctionNode.prototype.compileAST = function(ast, silent) {
     this.compileThisExpression(ast);
     break;
 
+  case "ThrowStatement":
+    this.compileThrowStatement(ast);
+    break;
+
+  case "TryStatement":
+    this.compileTryStatement(ast);
+    break;
+
   case "VariableDeclaration":
     this.compileVariableDeclaration(ast);
     break;
@@ -755,23 +782,6 @@ FunctionNode.prototype.compileBinaryExpression = function(ast) {
   this.compileAST(ast.right);
   this.emit("BINOP", ast.operator);
   return;
-
-  switch (ast.operator) {
-  case '+':
-    this.emit('+');
-    break;
-
-  case '*':
-    this.emit('*');
-    break;
-
-  case "===":
-    this.emit('===');
-    break;
-
-  default:
-    throw "unsupported binary operator";
-  }
 };
 
 // interface BlockStatement <: Statement {
@@ -823,6 +833,16 @@ FunctionNode.prototype.compileCallExpression = function(ast) {
   this.emit("CALL");
 };
 
+// interface CatchClause <: Node {
+// type: "CatchClause";
+// param: Pattern;
+// guard: Expression | null;
+// body: BlockStatement;
+// }
+FunctionNode.prototype.compileCatchClause = function(ast) {
+  this.compileAST(ast.body);
+};
+
 // interface ConditionalExpression <: Expression {
 // type: "ConditionalExpression";
 // test: Expression;
@@ -831,6 +851,39 @@ FunctionNode.prototype.compileCallExpression = function(ast) {
 // }
 FunctionNode.prototype.compileConditionalExpression = function(ast) {
   throw "error";
+};
+
+// interface ForStatement <: Statement {
+// type: "ForStatement";
+// init: VariableDeclaration | Expression | null;
+// test: Expression | null;
+// update: Expression | null;
+// body: Statement;
+// }
+FunctionNode.prototype.compileForStatement = function(ast) {
+
+  var test = this.compiler.newLabel();
+  var after = this.compiler.newLabel();
+  var t = this.compiler.newLabel();
+  var cont = this.compiler.newLabel();
+
+  // do init first
+  this.compileAST(ast.init);
+
+  // do test, quit if fail
+  this.emitLabel(test);
+  this.compileAST(ast.test);
+  this.emitJUMPC(after);
+
+  // do body
+  this.compileAST(ast.body);
+
+  // do update
+  this.emitLabel(cont);
+  this.compileAST(ast.update);
+  // goto test
+  this.emitJUMP(test);
+  this.emitLabel(after);
 };
 
 // interface ExpressionStatement <: Statement {
@@ -901,6 +954,31 @@ FunctionNode.prototype.compileIdentifier = function(ast) {
     }
   }
 
+  /**
+   * if this is a CatchClause param, such as catch (e)
+   */
+  var depth = 0;
+  for (var x = ast; x.__parent__ !== null
+      && x.__parent__.type !== 'FunctionDeclaration'
+      && x.__parent__.type !== 'FunctionExpression'; x = x.__parent__) {
+
+    if (x.__parent__.type === 'CatchClause') {
+      if (ast.name === x.__parent__.param.name) {
+        
+        this.emit('LITA', 'CATCH', depth);
+        
+        if (exprAsVal(ast)) {
+          this.emit('FETCHA');
+        }
+        return;
+      }
+      depth++;
+    }
+  }
+
+  /**
+   * normal lookup
+   */
   var index = this.findNameInArguments(ast.name);
   if (index !== undefined) {
     this.emit('LITA', 'PARAM', index);
@@ -941,24 +1019,22 @@ FunctionNode.prototype.compileIdentifier = function(ast) {
 // }
 FunctionNode.prototype.compileIfStatement = function(ast) {
 
-  var begin = this.compiler.newLabel();
   var after = this.compiler.newLabel();
-  var t = this.compiler.newLabel();
   var f = this.compiler.newLabel();
 
-  this.emitLabel(begin);
+  // do test, jump to false block if false
   this.compileAST(ast.test);
-  this.emitJUMPC(t, f);
+  this.emitJUMPC(f);
 
-  this.emitLabel(t);
+  // fall-through true block and bypass false block
   this.compileAST(ast.consequent);
   this.emitJUMP(after);
 
+  // false block, may be empty
   this.emitLabel(f);
   if (ast.alternate !== null) {
     this.compileAST(ast.alternate);
   }
-  this.emitJUMP(after);
   this.emitLabel(after);
 };
 
@@ -1063,6 +1139,49 @@ FunctionNode.prototype.compileThisExpression = function(ast) {
   this.emit("THIS");
 };
 
+// interface ThrowStatement <: Statement {
+// type: "ThrowStatement";
+// argument: Expression;
+// }
+FunctionNode.prototype.compileThrowStatement = function(ast) {
+
+  this.compileAST(ast.argument);
+  this.emit("THROW");
+};
+
+// interface TryStatement <: Statement {
+// type: "TryStatement";
+// block: BlockStatement;
+// handler: CatchClause | null;
+// guardedHandlers: [ CatchClause ];
+// finalizer: BlockStatement | null;
+// }
+
+FunctionNode.prototype.compileTryStatement = function(ast) {
+
+  var trap_begin = this.compiler.newLabel();
+  var trap_after = this.compiler.newLabel();
+  var trap_catch = (ast.handler === null) ? 0 : this.compiler.newLabel();
+  var trap_final = (ast.finalizer === null) ? 0 : this.compiler.newLabel();
+
+  this.emitLabel(trap_begin); // not necessary
+  this.emit("TRAP", trap_catch, trap_final);
+
+  this.compileAST(ast.block);
+  this.emit("UNTRAP");
+
+  if (ast.handler !== null) {
+    this.emitLabel(trap_catch);
+    this.compileAST(ast.handler);
+    this.emit("UNTRAP");
+  }
+
+  if (ast.finalizer !== null) {
+    this.emitLabel(trap_final);
+    this.compileAST(ast.finalizer);
+  }
+};
+
 // interface VariableDeclaration <: Declaration {
 // type: "VariableDeclaration";
 // declarations: [ VariableDeclarator ];
@@ -1100,6 +1219,28 @@ FunctionNode.prototype.compileVariableDeclarator = function(ast) {
     this.compileAST(ast.init);
     this.emit("STORE");
   }
+};
+
+// interface WhileStatement <: Statement {
+// type: "WhileStatement";
+// test: Expression;
+// body: Statement;
+// }
+FunctionNode.prototype.compileWhileStatement = function(ast) {
+
+  var begin = this.compiler.newLabel();
+  var after = this.compiler.newLabel();
+  var t = this.compiler.newLabel();
+  var f = this.compiler.newLabel();
+
+  this.emitLabel(begin);
+  this.compileAST(ast.test);
+  this.emitJUMPC(t, after);
+
+  this.emitLabel(t);
+  this.compileAST(ast.body);
+  this.emitJUMP(begin);
+  this.emitLabel(after);
 };
 
 /**

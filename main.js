@@ -565,8 +565,7 @@ var testcase_boolean = {
       vm.assertStackSlotBooleanValue(0, false);
     }
   },
-  
-  
+
 };
 
 var testcase_control = {
@@ -581,37 +580,43 @@ var testcase_control = {
 };
 
 var testcase_object = {
+
   object_assign_empty : {
     source : 'var a; a = {}; rb_test("test")',
     test : function(vm) {
-      // assert_stack_slot_object(vm, 0);
       vm.assertStackSlotObject(0);
     }
   },
   object_init_empty : {
     source : 'var a = {}; rb_test("test")',
     test : function(vm) {
-      // assert_stack_slot_object(vm, 0);
       vm.assertStackSlotObject(0);
     }
   },
   object_member_expr_assign : {
     source : 'var a; a = {}; a.x = 19; rb_test("test");',
     test : function(vm) {
-      // assert_stack_slot_object(vm, 0);
       vm.assertStackSlotObject(0);
       vm.assertStackSlotObjectPropertyNumberValue(0, 'x', 19);
-      // var objIndex = vm.Stack[0].index;
-      // assert_object_property_number_value(vm, objIndex, "x", 19);
     }
   },
   object_member_expr_fetch : {
     source : 'var a; var b = {}; b.x = 138; a = b.x; rb_test("test");',
     test : function(vm) {
-      // assert_stack_slot_number_value(vm, 0, 138);
       vm.assertStackSlotNumberValue(0, 138);
     }
-  }
+  },
+  object_expression : {
+    source : 'var a; var b = { x : 123, y: 254};              '
+        + 'var a = b.x; rb_test("test1");                     '
+        + 'var a = b.y; rb_test("test2");                     ',
+    test1 : function(vm) {
+      vm.assertStackSlotNumberValue(0, 123);
+    },
+    test2 : function(vm) {
+      vm.assertStackSlotNumberValue(0, 254);
+    }
+  },
 };
 
 var testcase_jsthis = {
@@ -688,17 +693,16 @@ var testcase_internal = {
     source : 'var a = Object();'
   },
 
-  object_expression : {
-    init : Common.InitMode.FULL,
-    source : 'var a = { x : 1, y: 2};'
-  },
-
   // object_expression_getter : {
   // source : 'var a = { get b() { return 1; }};'
   // }
 
   empty_array : {
     source : 'var a = [];'
+  },
+  
+  try_catch : {
+    source : 'var a; try { throw "error" } catch (e) { a = e; }'
   }
 };
 
@@ -714,6 +718,10 @@ var testcase_future = {
 
 };
 
+var testcase_exception = {
+    
+};
+
 var TESTS = {
   basic : testcase_basic,
   func : testcase_func,
@@ -721,9 +729,10 @@ var TESTS = {
   control : testcase_control,
   object : testcase_object,
   global : testcase_global,
+//  exception : testcase_exception,
 //  internal : testcase_internal,
-//  jsthis : testcase_jsthis,
-//  jsnew : testcase_jsnew,
+// jsthis : testcase_jsthis,
+// jsnew : testcase_jsnew,
 };
 
 // run_testsuite(TESTS);
@@ -808,7 +817,7 @@ function emit_as_tcp_client(testcase) {
 }
 
 run_testsuite(TESTS);
-// run_single_in_suite(TESTS, "func", "func_invoke");
+// run_single_in_suite(TESTS, "internal", "try_catch");
 
 // emit_as_tcp_client(TESTS["basic"]["var_declare_dual"]);
 

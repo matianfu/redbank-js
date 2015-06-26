@@ -11,11 +11,29 @@
 
 var Common = require('./common.js');
 
-// var HORIZONTAL_LINE = "=================================================";
-
 var ADDR_LOCAL = 'local';
 var ADDR_PARAM = 'param';
 var ADDR_LEXICAL = 'lexical';
+var ADDR_PROPERTY = 'property';
+var ADDR_CATCH = 'catch';
+
+
+
+var UNDEFINED_TYPE = 'undefined';
+var NULL_TYPE = 'null';
+var BOOLEAN_TYPE = 'boolean';
+var STRING_TYPE = 'string';
+var NUMBER_TYPE = 'number';
+var OBJECT_TYPE = 'object';
+var REFERENCE_TYPE = 'reference';
+var LIST_TYPE = 'list';
+var COMPLETION_TYPE = 'completion';
+var PROPERTY_DESCRIPTOR_TYPE = 'property descriptor';
+var PROPERTY_IDENTIFIER_TYPE = 'property identifier';
+var LEXICAL_ENVIRONMENT_TYPE = 'lexical environment';
+var ENVIRONMENT_RECORD_TYPE = 'environment record';
+
+
 
 var STRING_HASHBITS = 7;
 var STRING_HASHTABLE_SIZE = (1 << STRING_HASHBITS);
@@ -58,6 +76,16 @@ function HASHMORE(hash, id) {
 }
 
 /**
+ * 
+ */
+function ECMAPropertyDescriptor() {
+
+  this.isDataPropertyDescriptor = false;
+  this.isAccessorPropertyDescriptor = false;
+
+};
+
+/**
  * for other parts of vm object, see initBootstrap function.
  */
 function RedbankVM() {
@@ -67,7 +95,9 @@ function RedbankVM() {
 
   this.PCStack = [];
   this.FPStack = [];
+  this.EPStack = [];
 
+  this.ErrorStack = [];
   this.Stack = [];
   this.Objects = [];
 
@@ -86,6 +116,151 @@ function RedbankVM() {
   // testcase
   this.testcase = {};
 }
+
+RedbankVM.prototype.createTrap = function(catchLabel, finalLabel, stackLength) {
+
+  var trap = {
+    type : 'trap',
+    REF : {
+      count : 0,
+      referrer : []
+    },
+
+    catchLabel : catchLabel,
+    finalLabel : finalLabel,
+
+    stackLength : stackLength,
+    param : 0, // referencing field
+  };
+
+  return this.register(trap);
+};
+
+/**
+ * ECMA262 8.7 The Reference Specification Type
+ */
+RedbankVM.prototype.ECMAReferenceType = function(base, referencedName, strict) {
+
+  /**
+   * check base type, environment_record is not implemented in redbank.
+   */
+  var baseType = this.typeOfObject(base);
+  if (!(baseType === 'undefined' || baseType === 'object'
+      || baseType === 'boolean' || baseType === 'string'
+      || baseType === 'number' || 'environment_record')) {
+    throw "error";
+  }
+
+  /**
+   * check referencedName and strict
+   */
+  if (this.typeOfObject(referencedName) !== 'string'
+      || typeof strict !== 'boolean') {
+    throw "error";
+  }
+
+  var ref = {
+    type : 'ecma_reference',
+
+    base : base,
+    referencedName : referencedName,
+    strict : strict,
+  };
+
+  return ref;
+};
+
+RedbankVM.prototype.GetBase = function(V) {
+  return V.base;
+};
+
+RedbankVM.prototype.GetReferencedName = function(V) {
+  return V.referencedName;
+};
+
+RedbankVM.prototype.IsStrictReference = function(V) {
+  return V.strict;
+};
+
+RedbankVM.prototype.HasPrimitiveBase = function(V) {
+  var baseType = this.typeOfObject(V.base);
+  if (baseType === 'boolean' || baseType === 'string' || baseType === 'number') {
+    return true;
+  }
+  return false;
+};
+
+RedbankVM.prototype.IsPropertyReference = function(V) {
+  var baseType = this.typeOfObject(V.base);
+  if (baseType === 'object' || this.HasPrimitiveBase(V)) {
+    return true;
+  }
+  return false;
+};
+
+RedbankVM.prototype.IsUnresolvableReference = function(V) {
+  var baseType = this.typeOfObject(V.base);
+  if (baseType === 'undefined') {
+    return true;
+  }
+  return false;
+};
+
+RedbankVM.prototype.GetValue = function(V) {
+
+  if (typeof V === 'number') {
+    throw 'error';
+  }
+
+  if (V.type !== 'ecma_reference') {
+    return V;
+  }
+
+  var base = this.GetBase(V);
+  if (this.IsUnresolvableReference(V)) {
+    this.THROW(this.REFERENCE_ERROR);
+  }
+
+  var get;
+  if (this.IsPropertyReference(V)) {
+    if (false === this.HasPrimitiveBase(V)) {
+      get = 0;
+    }
+    else {
+      get = function(this_, P) {
+        var O = this.ToObject(base);
+        var desc = O.__GetProperty__(P);
+        if (desc === undefined) {
+          return undefined;
+        }
+
+        if (IsDataDescriptor(desc) === true) {
+          return desc.__Value__;
+        }
+
+        this.assert(true === this.IsAccessorDescriptor(desc));
+
+        var getter = desc.__Get__;
+        if (getter === undefined) {
+          return undefined;
+        }
+
+        return getter.__Call__(base);
+      };
+    }
+
+    base
+  }
+  else {
+    // must be environment record
+
+  }
+};
+
+/**
+ * 
+ * @param property
+ */
 
 RedbankVM.prototype.hashProperty = function(property) {
 
@@ -216,10 +391,10 @@ RedbankVM.prototype.isa = function(child, parent) {
   if (child === parent) {
     return true;
   }
-  if (this.Objects[child].PROTOTYPE === parent) {
+  if (this.Objects[child].__PROTOTYPE__ === parent) {
     return true;
   }
-  child = this.Objects[child].PROTOTYPE;
+  child = this.Objects[child].__PROTOTYPE__;
   return this.isa(child, parent);
 };
 
@@ -417,10 +592,14 @@ RedbankVM.prototype.decrREF = function(id, object, name, index) {
       }
 
       // recycle prototype
-      this.set(0, id, 'PROTOTYPE');
+      this.set(0, id, '__PROTOTYPE__');
 
       // recycle root property
       this.set(0, id, 'property');
+      break;
+
+    case 'trap':
+      this.decrREF(obj.param, id, 'param');
       break;
 
     default:
@@ -432,7 +611,7 @@ RedbankVM.prototype.decrREF = function(id, object, name, index) {
 };
 
 /**
- * Factory for addr object
+ * Factory for (indexed) addr object
  * 
  * @param addrType
  * @param index
@@ -455,6 +634,30 @@ RedbankVM.prototype.createAddr = function(addrType, index) {
 };
 
 /**
+ * Factory for (named) addr object
+ * 
+ * @param object
+ * @param name
+ * @returns
+ */
+RedbankVM.prototype.createPropAddr = function(object, name) {
+
+  var addr = {
+    type : 'addr',
+    REF : {
+      count : 0,
+      referrer : [],
+    },
+
+    addrType : 'property',
+    object : object,
+    name : name,
+  };
+  var id = this.register(addr);
+  return id;
+};
+
+/**
  * 
  * @param target
  * @returns
@@ -462,9 +665,7 @@ RedbankVM.prototype.createAddr = function(addrType, index) {
 RedbankVM.prototype.createLink = function(target) {
 
   var link = {
-
     type : 'link',
-
     REF : {
       count : 0,
       referrer : [],
@@ -477,23 +678,30 @@ RedbankVM.prototype.createLink = function(target) {
   return id;
 };
 
-/** not used yet * */
-RedbankVM.prototype.createLexical = function(size) {
+RedbankVM.prototype.createSlots = function(size) {
 
-  var lexical = {
-    type : 'lexical',
+  this.assert(typeof size === 'number');
+  if (size <= 0) {
+    throw "creating negative or zero sized slots";
+  }
+
+  var slots = {
+    type : 'slots',
     REF : {
       count : 0,
-      referrer : [],
+      referrer : []
     },
     size : size,
-    slots : []
+    slot : []
   };
 
+  // zero
   for (var i = 0; i < size; i++) {
-    lexical.slots[i] = 0;
+    slots[i] = 0;
   }
-  return this.register(lexical);
+
+  var id = this.register(slots);
+  return id;
 };
 
 RedbankVM.prototype.set = function(id, object, name, index) {
@@ -537,17 +745,12 @@ RedbankVM.prototype.set = function(id, object, name, index) {
 
 };
 
-/** not used yet * */
-RedbankVM.prototype.createProperty = function(parent, child, name, w, e, c) {
-
-};
-
 RedbankVM.prototype.createUndefined = function() {
 
   var obj = {
     type : 'undefined',
     REF : {
-      count : 0,
+      count : Infinity,
       referrer : [],
     },
 
@@ -562,7 +765,7 @@ RedbankVM.prototype.createNull = function() {
   var obj = {
     type : 'null',
     REF : {
-      count : 0,
+      count : Infinity,
       referrer : [],
     },
 
@@ -572,43 +775,43 @@ RedbankVM.prototype.createNull = function() {
   return this.register(obj);
 };
 
-RedbankVM.prototype.createTrue = function() {
+RedbankVM.prototype.createBoolean = function(value, infinite, tag) {
 
-  var obj = {
-    type : 'boolean',
-    REF : {
-      count : 0,
-      referrer : [],
-    },
-
-    bValue : true,
-
-    isPrimitive : true,
-    tag : 'true',
-  };
-  return this.register(obj);
-};
-
-RedbankVM.prototype.createFalse = function() {
-
-  var obj = {
-    type : 'boolean',
-    REF : {
-      count : 0,
-      referrer : [],
-    },
-
-    bValue : false,
-
-    isPrimitive : true,
-    tag : 'false',
+  if (typeof value !== 'boolean' || typeof infinite !== 'boolean') {
+    throw 'error';
   }
+
+  var obj = {
+    type : 'boolean',
+    REF : {
+      count : 0,
+      referrer : [],
+    },
+
+    value : value,
+
+    isPrimitive : true,
+    tag : tag,
+  };
+
+  if (infinite) {
+    obj.REF.count = Infinity;
+  }
+
   return this.register(obj);
 };
 
-RedbankVM.prototype.createNumber = function(val) {
+/**
+ * Factory for creating 'number' type primitive object
+ * 
+ * @param value
+ * @param infinite
+ * @param tag
+ * @returns
+ */
+RedbankVM.prototype.createNumber = function(value, infinite, tag) {
 
-  if (typeof val !== 'number') {
+  if (typeof value !== 'number' || typeof infinite !== 'boolean') {
     throw 'error';
   }
 
@@ -619,14 +822,20 @@ RedbankVM.prototype.createNumber = function(val) {
       referrer : [],
     },
 
-    nValue : val,
+    value : value,
 
     isPrimitive : true,
+    tag : tag,
+  };
+
+  if (infinite) {
+    obj.REF.count = Infinity;
   }
+
   return this.register(obj);
 };
 
-RedbankVM.prototype.createString = function(str) {
+RedbankVM.prototype.createString = function(value, tag) {
 
   if (typeof val !== 'string') {
     throw 'error';
@@ -639,15 +848,15 @@ RedbankVM.prototype.createString = function(str) {
       referrer : [],
     },
 
-    nValue : val,
+    value : value,
 
     isPrimitive : true,
-    
-    isInterned : false,
-    hash : 0 >>> 0
-  }
+
+    interned : false,
+    hash : undefined,
+  };
   return this.register(obj);
-}
+};
 
 /**
  * Create a primitive Javascript value object
@@ -702,6 +911,27 @@ RedbankVM.prototype.createPrimitive = function(value, tag, builtin) {
   return id;
 };
 
+RedbankVM.prototype.bootstrapObjectPrototype = function() {
+
+};
+
+function Object(proto) {
+
+  this.__Prototype__ = proto;
+
+  this.__Class__ = undefined; // string
+  this.__Extensible__ = undefined; // boolean
+  this.__Get__ = undefined; //
+  this.__GetOwnProperty__ = undefined;
+  this.__GetProperty__ = undefined;
+  this.__Put__ = undefined;
+  this.__CanPut__ = undefined;
+  this.__HasProperty__ = undefined;
+  this.__Delete__ = undefined;
+  this.__DefaultValue__ = undefined;
+  this.__DefineOwnProperty__ = undefined;
+};
+
 RedbankVM.prototype.createObject = function(proto, tag) {
 
   var obj, id;
@@ -714,16 +944,16 @@ RedbankVM.prototype.createObject = function(proto, tag) {
 
     type : 'object',
 
-    PROTOTYPE : 0,
-    property : 0,
-
     REF : {
       count : 0,
       referrer : [],
     },
 
+    property : 0, // referencing
     isPrimitive : false,
     tag : tag,
+
+    __PROTOTYPE__ : 0, // referencing
 
     /*
      * don't confuse these methods with Object's methods, which should be a
@@ -745,7 +975,7 @@ RedbankVM.prototype.createObject = function(proto, tag) {
   };
   id = this.register(obj);
 
-  this.set(proto, id, 'PROTOTYPE');
+  this.set(proto, id, '__PROTOTYPE__');
 
   // Functions have prototype objects.
   if (this.FUNCTION_PROTO !== undefined && this.isa(id, this.FUNCTION_PROTO)) {
@@ -815,56 +1045,34 @@ RedbankVM.prototype.createNativeFunction = function(nativeFunc, tag) {
   return func;
 };
 
-RedbankVM.prototype.createProperty = function(parent, writable, enumerable,
-    configurable) {
+RedbankVM.prototype.createProperty = function(parent, name, w, e, c) {
 
-  var property = {
+  this.assert(parent !== 0 && this.typeOfObject(parent) === 'object');
+  this.assert(name !== 0 && this.typeOfObject(name) === 'string');
+
+  var prop = {
 
     type : 'property',
-
     REF : {
       count : 0,
-      referrer : [],
+      referrer : []
     },
 
-    children : [],
+    // referencing field
+    child : 0,
+    name : 0,
     nextInObject : 0,
+    nextInSlot : 0,
 
+    // non referencing field
     parent : parent,
-
-    writable : (writable === true) ? true : false,
-    enumerable : (enumerable === true) ? true : false,
-    configurable : (configurable === true) ? true : false,
+    writable : (w === true) ? true : false,
+    enumerable : (e === true) ? true : false,
+    configurable : (c === true) ? true : false,
   };
-};
 
-RedbankVM.prototype.searchProperty = function(object, name) {
-
-  if (typeof object !== 'number' || typeof name !== 'number') {
-    throw "Not an object id";
-  }
-
-  var obj = this.getObject(object);
-
-  for (var prop = obj.property; prop !== 0; prop = this.getObject(prop).nextInObject) {
-    if (this.getObject(prop).name === name) {
-      return prop;
-    }
-  }
-
-  return;
-};
-
-RedbankVM.prototype.deepSearchProperty = function(object, name) {
-
-  for (var x = object; x !== 0; x = this.getObject(x).PROTOTYPE) {
-
-    var prop = this.searchProperty(x, name);
-
-    if (prop !== undefined) {
-      return prop;
-    }
-  }
+  var id = this.register(prop);
+  this.set(name, id, 'name');
 };
 
 RedbankVM.prototype.setProperty = function(child, parent, name, writable,
@@ -934,7 +1142,7 @@ RedbankVM.prototype.setProperty = function(child, parent, name, writable,
 
   var prop = this.searchProperty(parent, name);
 
-  if (prop === undefined) {
+  if (prop === 0) {
 
     var property = {
 
@@ -1014,6 +1222,35 @@ RedbankVM.prototype.setPropertyByLiteral = function(child, parent, nameLiteral,
   this.setProperty(child, parent, name, writable, enumerable, configurable);
 };
 
+RedbankVM.prototype.searchProperty = function(object, name) {
+
+  if (typeof object !== 'number' || typeof name !== 'number') {
+    throw "Not an object id";
+  }
+
+  var obj = this.getObject(object);
+
+  for (var prop = obj.property; prop !== 0; prop = this.getObject(prop).nextInObject) {
+    if (this.getObject(prop).name === name) {
+      return prop;
+    }
+  }
+
+  return 0;
+};
+
+RedbankVM.prototype.deepSearchProperty = function(object, name) {
+
+  for (var x = object; x !== 0; x = this.getObject(x).__PROTOTYPE__) {
+
+    var prop = this.searchProperty(x, name);
+
+    if (prop !== undefined) {
+      return prop;
+    }
+  }
+};
+
 RedbankVM.prototype.getProperty = function(parent, name) {
 
   var prop = this.deepSearchProperty(parent, name);
@@ -1023,6 +1260,93 @@ RedbankVM.prototype.getProperty = function(parent, name) {
   }
   var id = this.getObject(prop).child;
   return (id === 0) ? this.UNDEFINED : id;
+};
+
+/**
+ * ECMA 8.12.1 [[GetOwnProperty]](P)
+ * 
+ * @param O a native ECMAScript Object
+ * @param P a String
+ * @returns ECMAPropertyDescriptor or this.UNDEFINED
+ */
+RedbankVM.prototype.__GetOwnProperty__ = function(O, P) {
+
+  this.assert(this.typeOfObject(O) === 'object');
+  this.assert(this.typeOfObject(P) === 'string');
+
+  var nameObj = this.getObject(P);
+  if (nameObj.interned !== true) {
+    throw 'error';
+  }
+
+  // 1. If O doesn’t have an own property with name P, return undefined.
+  if (0 === this.searchProperty(O, P)) {
+    return this.UNDEFINED;
+  }
+
+  // 2. Let D be a newly created Property Descriptor with no fields.
+  var D = {};
+
+  // 3. Let X be O’s own property named P.
+  var X = this.searchProperty(O, P);
+  var XObj = this.getObject(X);
+
+  // 4. If X is a data property, then
+  if (XObj.isDataProperty === true) {
+    // a. Set D.[[Value]] to the value of X’s [[Value]] attribute.
+    D.__Value__ = XObj.__Value__;
+    // b. Set D.[[Writable]] to the value of X’s [[Writable]] attribute
+    D.__Writable__ = XObj.__Writable__;
+  }
+  // 5. Else X is an accessor property, so
+  else if (XObj.isAccessorProperty) {
+    // a. Set D.[[Get]] to the value of X’s [[Get]] attribute.
+    D.__Get__ = XObj.__Get__;
+    // b. Set D.[[Set]] to the value of X’s [[Set]] attribute.
+    D.__Set__ = XObj.__Set__;
+  }
+  // 6. Set D.[[Enumerable]] to the value of X’s [[Enumerable]] attribute.
+  D.__Enumerable__ = XObj.__Enumerable__;
+  // 7. Set D.[[Configurable]] to the value of X’s [[Configurable]] attribute.
+  D.__Configurable__ = XObj.__Configurable__;
+  // 8. Return D.
+  return D;
+};
+
+RedbankVM.prototype.__GetProperty__ = function(O, P) {
+
+  var prop = this.__GetOwnProperty__(O, P);
+  if (prop !== undefined) {
+    return prop;
+  }
+
+  var OObj = this.getObject(O);
+
+  var proto = OObj.__Prototype__;
+  if (proto === null) {
+    return this.UNDEFINED;
+  }
+
+  return this.__GetProperty__(proto, P); // TODO undefined, null, zero
+};
+
+RedbankVM.prototype.__Get__ = function(O, P) {
+
+  var desc = this.__GetProperty__(O, P);
+  if (desc === undefined) {
+    return this.UNDEFINED;
+  }
+
+  if (true === this.IsDataDescriptor(desc)) {
+    return desc.__Value__;
+  }
+
+  var getter = desc.__Get__;
+  if (getter === undefined) {
+    return this.UNDEFINED;
+  }
+
+  return __Call__();
 };
 
 RedbankVM.prototype.createJSArray = function() {
@@ -1089,8 +1413,10 @@ RedbankVM.prototype.bootstrap = function() {
   this.TRUE = undefined;
   this.FALSE = undefined;
 
-  // global property (Number)
-  this.INFINITY = undefined;
+  this.POSITIVE_INFINITY = undefined;
+  this.NEGATIVE_INFINITY = undefined;
+  this.POSItIVE_ZERO = undefined;
+  this.NEGATIVE_ZERO = undefined;
   this.NAN = undefined;
 
   // built-in prototypes
@@ -1113,25 +1439,17 @@ RedbankVM.prototype.bootstrap = function() {
   id = this.register(this);
   this.getObject(id).REF.count = Infinity;
 
-  // null (value)
-  id = this.createPrimitive(null, "NULL");
-  this.NULL = id;
-  this.getObject(id).REF.count = Infinity;
-
-  // undefined (value)
-  id = this.createPrimitive(undefined, "UNDEFINED");
-  this.UNDEFINED = id;
-  this.getObject(id).REF.count = Infinity;
-
-  // boolean true (value)
-  id = this.createPrimitive(true, "TRUE");
-  this.TRUE = id;
-  this.getObject(id).REF.count = Infinity;
-
-  // boolean false (value)
-  id = this.createPrimitive(false, "FALSE");
-  this.FALSE = id;
-  this.getObject(id).REF.count = Infinity;
+  this.UNDEFINED = this.createUndefined();
+  this.NULL = this.createNull();
+  this.TRUE = this.createBoolean(true, true, "True");
+  this.FALSE = this.createBoolean(false, true, "False");
+  this.POSITIVE_ZERO = this.createNumber(+0, true, "Positive Zero");
+  this.NEGATIVE_ZERO = this.createNumber(-0, true, "Negative Zero");
+  this.POSITIVE_INFINITY = this.createNumber(Number.POSITIVE_INFINITY, true,
+      "Positive Infinity");
+  this.NEGATIVE_INFINITY = this.createNumber(Number.NEGATIVE_INFINITY, true,
+      "Negative Infinity");
+  this.NAN = this.createNumber(Number.NaN, true, "NaN");
 
   /**
    * Object.prototype
@@ -1142,7 +1460,7 @@ RedbankVM.prototype.bootstrap = function() {
       count : Infinity,
       referrer : [],
     },
-    PROTOTYPE : 0,
+    __PROTOTYPE__ : 0,
     property : 0,
     isPrimitive : false,
 
@@ -1175,7 +1493,7 @@ RedbankVM.prototype.bootstrap = function() {
       count : Infinity,
       referrer : [],
     },
-    PROTOTYPE : this.OBJECT_PROTO,
+    __PROTOTYPE__ : this.OBJECT_PROTO,
     property : 0,
 
     nativeFunc : function() {
@@ -1217,7 +1535,7 @@ RedbankVM.prototype.bootstrap = function() {
 
     var newFunc, code;
 
-    if (this.PROTOTYPE === vm.FUNCTION) {
+    if (this.__PROTOTYPE__ === vm.FUNCTION) {
       // Called with new.
       newFunc = this;
     }
@@ -1263,7 +1581,7 @@ RedbankVM.prototype.bootstrap = function() {
       count : Infinity,
       referrer : [],
     },
-    PROTOTYPE : 0,
+    __PROTOTYPE__ : 0,
     property : 0,
     isPrimitive : false,
     isArray : true,
@@ -1626,6 +1944,14 @@ RedbankVM.prototype.push = function(id) {
   this.set(id, this.id, 'Stack', index);
 };
 
+RedbankVM.prototype.esPush = function(id) {
+
+  this.assertDefined(id);
+  var index = this.ErrorStack.length;
+  this.ErrorStack.push(0);
+  this.set(id, this.id, 'ErrorStack', index);
+};
+
 RedbankVM.prototype.pop = function() {
 
   var id = this.TOS();
@@ -1692,6 +2018,17 @@ RedbankVM.prototype.fetcha = function() {
     linkObj = this.getObject(link);
 
     this.set(linkObj.target, this.id, 'Stack', this.indexOfTOS());
+  }
+  else if (addrObj.addrType === ADDR_PROPERTY) { // propAddr -- obj
+
+    var id = this.getProperty(); // TODO
+    this.set(id, this.id, 'Stack', this.indexOfTOS());
+  }
+  else if (addrObj.addrType === ADDR_CATCH) {
+
+    var eid = this.ErrorStack[this.ErrorStack.length - 1 - index];
+    var pid = this.getObject(eid).param;
+    this.set(pid, this.id, 'Stack', this.indexOfTOS());
   }
   else {
     throw "Unknown address type";
@@ -1993,6 +2330,148 @@ RedbankVM.prototype.stepCall = function() {
   }
 };
 
+/**
+ * ecma262 11.9.3
+ */
+RedbankVM.prototype.algorithmOfAbstractEqualityComparison = function(x, y) {
+
+  var typeX = this.typeOfObject(x);
+  var typeY = this.typeOfObject(y);
+
+  if (typeX === typeY) {
+    if (typeX === 'undefined' || typeX === 'null') {
+      return true;
+    }
+
+    if (typeX === 'number') {
+      if (x === this.NAN || y === this.NAN) {
+        return false;
+      }
+
+      if (this.getObject(x).value === this.getObject(y).value) {
+        return true;
+      }
+
+      if (x === this.POSITIVE_ZERO && y === this.NEGATIVE_ZERO
+          || x === this.NEGATIVE_ZERO && y === this.POSITIVE_ZERO) {
+        return true;
+      }
+
+      return false;
+    }
+
+    if (typeX === 'string') {
+      // TODO
+    }
+
+    if (typeX === 'boolean') {
+      // TODO
+    }
+
+    return (x === y) ? true : false;
+  }
+
+  if (typeX === 'undefined' && typeY === 'null' || typeY === 'undefined'
+      && typeX === 'null') {
+    return true;
+  }
+
+  if (typeX === 'number' && typeY === 'string') {
+
+  }
+
+  if (typeX === 'string' && typeY === 'number') {
+
+  }
+
+};
+
+/**
+ * ecma262, 11.9.6
+ */
+RedbankVM.prototype.algorithmOfStrictEqualityComparison = function(x, y) {
+  if (this.typeOfObject(x) !== this.typeOfObject(y)) {
+    return false;
+  }
+
+  if (this.typeOfObject(x) === 'undefined') {
+    return true;
+  }
+
+  if (this.typeOfObject(x) === 'null') {
+    return true;
+  }
+
+  if (this.typeOfObject(x) === 'number') {
+    if (x === this.NAN || y === this.NAN) {
+      return false;
+    }
+
+    if (this.getObject(x).value === this.getObject(x).value) {
+      return true;
+    }
+
+    if (this.getObject(x).value === this.POSITIVE_ZERO
+        && this.getObject(y).value === this.NEGATIVE_ZERO) {
+      return true;
+    }
+
+    if (this.getObject(x).value === this.NEGATIVE_ZERO
+        && this.getObject(y).value === this.POSITIVE_ZERO) {
+      return true;
+    }
+
+    return false;
+  }
+
+  if (this.typeOfObject(x) === 'string') {
+    if (this.getObject(x).isInterned && this.getObject(y).isInterned) {
+      if (x === y) {
+        return true;
+      }
+      return false;
+    }
+
+    if (this.getObject(x).value === this.getObject(y).value) {
+      return true;
+    }
+
+    return false;
+  }
+
+  if (this.typeOfObject(x) === 'boolean') {
+    return (x === y) ? true : false;
+  }
+
+  return (x === y) ? true : false;
+}
+
+RedbankVM.prototype.compare = function(a, b) {
+
+  var aObj = this.getObject(a);
+  var bObj = this.getObject(b);
+
+  if (a.isPrimitive && typeof a == 'number' && isNaN(a.data) || b.isPrimitive
+      && typeof b == 'number' && isNaN(b.data)) {
+    return NaN;
+  }
+  if (a.isPrimitive && b.isPrimitive) {
+    a = a.data;
+    b = b.data;
+  }
+  else {
+    // TODO: Handle other types.
+    return NaN;
+  }
+  if (a < b) {
+    return -1;
+  }
+  else if (a > b) {
+    return 1;
+  }
+  return 0;
+};
+
 RedbankVM.prototype.stepBinop = function(binop) {
 
   // var comp = this.comp(leftSide, rightSide);
@@ -2179,7 +2658,7 @@ RedbankVM.prototype.step = function(code, bytecode) {
     this.stepCapture(bytecode);
     break;
 
-  case "DROP": // n1 --
+  case "DROP": // obj --
     this.pop();
     break;
 
@@ -2207,15 +2686,13 @@ RedbankVM.prototype.step = function(code, bytecode) {
     break;
 
   case "JUMPC":
-    if (this.TOS() === this.TRUE) {
-      this.PC = this.findLabel(this.code, bytecode.arg1);
-    }
-    else if (this.TOS() === this.FALSE) {
+    if (this.TOS() === this.FALSE) {
       this.PC = this.findLabel(this.code, bytecode.arg2);
     }
-    else {
+    else if (this.TOS() !== this.TRUE) {
       throw "non-boolean value on stack";
     }
+
     this.pop();
     break;
 
@@ -2240,6 +2717,9 @@ RedbankVM.prototype.step = function(code, bytecode) {
     else if (bytecode.arg1 === "GLOBAL") {
       this.push(this.GLOBAL);
       this.push(this.createPrimitive(bytecode.arg2)); // string name
+    }
+    else if (bytecode.arg1 === "CATCH") {
+      this.push(this.createAddr(ADDR_CATCH, bytecode.arg2));
     }
     else {
       throw "not supported yet";
@@ -2269,6 +2749,32 @@ RedbankVM.prototype.step = function(code, bytecode) {
     // create an empty object and push to stack
     id = this.createObject(this.OBJECT_PROTO);
     this.push(id);
+    break;
+
+  case 'THROW':
+
+    id = this.ErrorStack[this.ErrorStack.length - 1];
+    var errObj = this.getObject(id);
+
+    // preserve throw argument
+    this.set(this.TOS(), id, 'param');
+
+    // unwinding stack
+    while (this.Stack.length > errObj.stackLength) {
+      this.pop();
+    }
+
+    if (errObj.catchLabel !== 0) {
+      this.PC = this.findLabel(this.code, errObj.catchLabel);
+    }
+    else {
+      this.PC = this.findLabel(this.code, errObj.finalLabel);
+    }
+    break;
+
+  case "TRAP":
+    id = this.createTrap(bytecode.arg1, bytecode.arg2, this.Stack.length);
+    this.esPush(id);
     break;
 
   case "RET":
@@ -2362,6 +2868,11 @@ RedbankVM.prototype.step = function(code, bytecode) {
   case "THIS":
     id = this.Stack[this.FP - 2];
     this.push(id);
+    break;
+
+  case 'UNTRAP':
+    this.set(0, this.id, 'ErrorStack', this.ErrorStack.length - 1);
+    this.ErrorStack.pop();
     break;
 
   case '=':
