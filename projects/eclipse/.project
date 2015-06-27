@@ -53,6 +53,11 @@
 			<locationURI>PARENT-2-PROJECT_LOC/redbank_compiler.js</locationURI>
 		</link>
 		<link>
+			<name>redbank_object.js</name>
+			<type>1</type>
+			<locationURI>PARENT-2-PROJECT_LOC/redbank_object.js</locationURI>
+		</link>
+		<link>
 			<name>redbank_vm.js</name>
 			<type>1</type>
 			<locationURI>PARENT-2-PROJECT_LOC/redbank_vm.js</locationURI>
