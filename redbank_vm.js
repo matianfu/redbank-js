@@ -1,11 +1,24 @@
-/*******************************************************************************
+/*-*****************************************************************************
  * 
  * Virtual Machine
  * 
  * 
- * TOS NOS ThirdOS temp ... temp local [local size - 1] ... local [1] FP ->
- * local [0] function FP - 1 this FP - 2 argc FP - 3 param [argc - 1] ... param
- * [0]
+ * TOS 
+ * NOS
+ * ThirdOS 
+ * temp 
+ * ... 
+ * temp 
+ * local [local size - 1] 
+ * ... 
+ * local [1] 
+ * local [0]      <- FP
+ * function FP - 1 
+ * this FP - 2 
+ * argc FP - 3 
+ * param [argc - 1] 
+ * ... 
+ * param [0]
  * 
  ******************************************************************************/
 
@@ -93,10 +106,55 @@ var mainStackObj;
 var ERROR_STACK = 0;
 var errorStackObj;
 
-function assert(expr) {
-  if (!(expr)) {
-    throw "ASSERT FAIL";
+function ecmaIsAccessorDescriptor(desc) {
+  if (desc === undefined) {
+    return false;
   }
+  if (desc.GET === undefined && desc.SET === undefined) {
+    return false;
+  }
+  return true;
+}
+
+function ecmaIsDataDescriptor(desc) {
+  if (desc === undefined) {
+    return false;
+  }
+  if (desc.VALUE === undefined && desc.WRITABLE === undefined) {
+    return false;
+  }
+  return true;
+}
+
+function ecmaIsGenericDescriptor(desc) {
+  if (desc === undefined) {
+    return false;
+  }
+  if (false === ecmaIsAccessorDescriptor(desc)
+      && false === ecmaIsDataDescriptor(desc)) {
+    return true;
+  }
+  return false;
+}
+
+function ecmaFromPropertyDescriptor(desc) {
+  if (desc === undefined) {
+    return JS_UNDEFINED;
+  }
+
+  throw "not implemented yet";
+}
+
+function ecmaToPropertyDescriptor(obj) {
+
+  throw "not implemented yet";
+}
+
+/**
+ * this data type won't be put into ObjectHeap
+ */
+function PropertyDescriptor() {
+  this.type = PROPERTY_DESCRIPTOR_TYPE;
 }
 
 /**
@@ -165,6 +223,21 @@ function typeOfObject(id) {
   return getObject(id).type;
 }
 
+function classOfObject(id) {
+  return getObject(id).CLASS;
+}
+
+function assert(expr) {
+  if (!(expr)) {
+    throw "ASSERT FAIL";
+  }
+}
+
+function assertFunctionObject(id) {
+  assert(typeOfObject(id) === OBJECT_TYPE);
+  assert(classOfObject(id) === FUNCTION_CLASS);
+}
+
 /**
  * 
  * This function increment the reference count of object id
@@ -224,7 +297,7 @@ function decr(id, object, member) {
 
   if (obj.count === 1 && obj.type === 'string') {
 
-    this.uninternString(id); // uninterning string will cause it be removed.
+    uninternString(id); // uninterning string will cause it be removed.
     return;
   }
 
@@ -249,36 +322,45 @@ function decr(id, object, member) {
       break;
 
     case 'property':
+      // hash is already recycled in object decr
+      if (obj.VALUE) {
+        decr(obj.VALUE, id, 'VALUE'); // recycle child
+      }
+      if (obj.GET) {
+        decr(obj.GET, id, 'GET');
+      }
+      if (obj.SET) {
+        decr(obj.SET, id, 'SET');
+      }
       decr(obj.name, id, 'name'); // recycle name string
-      decr(obj.child, id, 'child'); // recycle child
       decr(obj.nextInObject, id, 'nextInObject'); // recycle next
       break;
 
-    case 'function': // TODO not function
-      // recycle lexicals
-      for (i = 0; i < obj.lexicals.length; i++) {
-        // TODO problems
-        decr(obj.lexicals[i], id, 'lexicals', i);
+    case 'object':
+
+      if (obj.CLASS === FUNCTION_CLASS) {
+        decr(obj.lexicals, id, 'lexicals');
       }
 
-    case 'object':
       // recycle all property hash
       for (var curr = obj.property; curr !== 0; curr = getObject(curr).nextInObject) {
-        this.unhashProperty(curr);
+        unhashProperty(curr);
       }
 
       // recycle prototype
-      // set(0, id, 'PROTOTYPE');
       decr(obj.PROTOTYPE, id, 'PROTOTYPE');
-      obj.PROTOTYPE = 0; // not necessary
       // recycle root property
-      // set(0, id, 'property');
       decr(obj.property, id, 'property');
-      obj.property = 0; // not necessary
       break;
 
     case 'trap':
       decr(obj.param, id, 'param');
+      break;
+
+    case 'vector':
+      for (var v = 0; v < obj.size; v++) {
+        decr(obj.elem[v], id, v);
+      }
       break;
 
     default:
@@ -339,10 +421,13 @@ var OBJECT_CONSTRUCTOR = 0;
 var FUNCTION_PROTO = 0;
 var FUNCTION_CONSTRUCTOR = 0;
 var ARRAY_PROTO = 0;
+
 var JS_GLOBAL = 0;
 var globalObj;
 
+var ecma;
 var typeProto;
+var propertyProto;
 var objectProto;
 var functionProto;
 var arrayProto;
@@ -365,13 +450,78 @@ typeProto = {
     return false;
   },
 
-  isEcmaLangObject : function() {
+  isEcmaLangType : function() {
     if (this.isPrimitive() || this.isObject()) {
       return true;
     }
     return false;
+  },
+
+  isEcmaType : function() {
+    if (this.isEcmaLangObject() || this.type === REFERENCE_TYPE
+        || this.type === LIST_TYPE || this.type === COMPLETION_TYPE
+        || this.type === PROPERTY_DESCRIPTOR_TYPE
+        || this.type === PROPERTY_IDENTIFIER_TYPE
+        || this.type === LEXICAL_ENVIRONMENT_TYPE
+        || this.type === ENVIRONMENT_RECORD_TYPE) {
+      return true;
+    }
+    return false;
+  },
+
+  toPrimitive : function() {
+
+    if (!(this.isEcmaType())) {
+      throw "error";
+    }
+
   }
 };
+
+function ecmaGetValue(V) {
+
+  if (V.isEcmaType() !== true) {
+    throw "error";
+  }
+
+  if (V.type !== REFERENCE_TYPE) {
+    return V;
+  }
+
+  var base = V.GetBase();
+
+  if (V.IsUnresolvableReference()) {
+    return -1; // THROW
+  }
+
+  if (V.IsPropertyReference()) {
+
+  }
+}
+
+/**
+ * Factory for (indexed) addr object
+ * 
+ * @param addrType
+ * @param index
+ * @returns
+ */
+function createAddr(addrType, index) {
+
+  if (typeof addrType !== 'string' || typeof index !== 'number') {
+    throw "error";
+  }
+
+  var obj = Object.create(typeProto);
+
+  obj.type = 'addr';
+  obj.count = 0;
+  obj.referrer = [];
+
+  obj.addrType = addrType;
+  obj.index = index;
+  return register(obj);
+}
 
 /**
  * 
@@ -402,6 +552,23 @@ function createVector(size, tag) {
   for (var i = 0; i < size; i++) {
     obj.elem[i] = 0;
   }
+
+  return register(obj);
+}
+
+function createTrap(catchLabel, finalLabel, stackLength) {
+
+  var obj = Object.create(typeProto);
+
+  obj.type = TRAP_TYPE;
+  obj.count = 0;
+  obj.referrer = [];
+
+  obj.catchLabel = catchLabel;
+  obj.finalLabel = finalLabel;
+  obj.stackLength = stackLength;
+
+  obj.param = 0; // referencing field
 
   return register(obj);
 }
@@ -537,6 +704,40 @@ function createString(value) {
   return id;
 }
 
+function uninternString(id) {
+
+  var obj = getObject(id);
+
+  assert(typeOfObject(id) === STRING_TYPE);
+
+  // this.assert(obj.type === 'string');
+
+  var hash = obj.hash;
+  hash = hash >>> (32 - STRING_HASHBITS); // shake off 20 bits
+
+  // if (StringHash[hash] === id) {
+  if (stringHashObj.elem[hash] === id) {
+
+    // set(getObject(id).nextInSlot, this.id, 'StringHash', hash);
+    set(getObject(id).nextInSlot, STRING_HASH, hash);
+    return;
+  }
+
+  // for (var curr = StringHash[hash];; curr = getObject(curr).nextInSlot) {
+  for (var curr = stringHashObj.elem[hash];; curr = getObject(curr).nextInSlot) {
+    var next = getObject(curr).nextInSlot;
+    if (next === 0) {
+      throw "not found in StringHash";
+    }
+
+    if (next === id) {
+      var nextnext = getObject(next).nextInSlot;
+      set(nextnext, curr, 'nextInSlot');
+      return;
+    }
+  }
+};
+
 /**
  * 
  * @param property
@@ -575,7 +776,7 @@ function unhashProperty(property) {
   var propObj = getObject(property);
   var parent = propObj.parent;
   var name = propObj.name;
-  var child = propObj.child;
+  // var child = propObj.child;
 
   var nameObj = getObject(name);
   var nameHash = nameObj.hash;
@@ -584,12 +785,12 @@ function unhashProperty(property) {
 
   propHash = propHash >>> (32 - PROPERTY_HASHBITS);
 
-  if (this.PropertyHash[propHash] === property) {
-    set(propObj.nextInSlot, this.id, 'PropertyHash', propHash);
+  if (propertyHashObj.elem[propHash] === property) {
+    set(propObj.nextInSlot, PROPERTY_HASH, propHash);
     return;
   }
 
-  for (var x = this.PropertyHash[propHash];; x = getObject(x).nextInSlot) {
+  for (var x = propertyHashObj.elem[propHash];; x = getObject(x).nextInSlot) {
 
     var next = getObject(x).nextInSlot;
     if (next === 0) {
@@ -604,33 +805,72 @@ function unhashProperty(property) {
   }
 }
 
-function createProperty(parent, name, w, e, c) {
+propertyProto = Object.create(typeProto);
 
-  this.assert(parent !== 0 && typeOfObject(parent) === 'object');
-  this.assert(name !== 0 && typeOfObject(name) === 'string');
+propertyProto.isDataProperty = function() {
+  return (this.VALUE !== 0) ? true : false;
+};
 
-  var obj = Object.create(typeProto);
+propertyProto.isAccessorProperty = function() {
+  return (this.GET !== 0 || this.SET) ? true : false;
+};
+
+function createProperty(parent, name, value, g, s, w, e, c) {
+
+  assert(parent !== 0 && typeOfObject(parent) === 'object');
+  assert(name !== 0 && typeOfObject(name) === 'string');
+
+  if (value === 0 && g === 0 && s === 0) {
+    throw "error";
+  }
+
+  if (value !== 0 && (g !== 0 || s !== 0)) {
+    throw "error";
+  }
+
+  var obj = Object.create(propertyProto);
 
   obj.type = PROPERTY_TYPE;
   obj.count = 0;
   obj.referrer = [];
 
-  obj.parent = parent;
-  obj.writable = (w === true) ? true : false;
-  obj.enumerable = (e === true) ? true : false;
-  obj.configurable = (c === true) ? true : false;
+  obj.WRITABLE = (w === true) ? true : false;
+  obj.ENUMERABLE = (e === true) ? true : false;
+  obj.CONFIGURABLE = (c === true) ? true : false;
 
-  obj.child = 0;
-  obj.name = 0;
-  obj.nextInObject = 0;
-  obj.nextInSlot = 0;
+  obj.VALUE = 0; // ecma, ref
+  obj.GET = 0; // ecma, ref
+  obj.SET = 0; // ecma, ref
+
+  obj.name = 0; // redbank internal, ref
+  obj.nextInObject = 0; // redbank internal, ref
+  obj.nextInSlot = 0; // redbank internal, ref
+
+  obj.parent = parent; // redbank internal, non-ref
 
   var id = register(obj);
+
+  if (value !== 0) {
+    set(value, id, 'VALUE');
+  }
+  if (g !== 0) {
+    set(g, id, 'GET');
+  }
+  if (s !== 0) {
+    set(s, id, 'SET');
+  }
   set(name, id, 'name');
 
   return id;
 }
 
+/**
+ * Search property with 'name' in 'object
+ * 
+ * @param object
+ * @param name
+ * @returns property id or 0 (not found)
+ */
 function searchProperty(object, name) {
 
   if (typeof object !== 'number' || typeof name !== 'number') {
@@ -638,22 +878,20 @@ function searchProperty(object, name) {
   }
 
   var obj = getObject(object);
-
   for (var prop = obj.property; prop !== 0; prop = getObject(prop).nextInObject) {
     if (getObject(prop).name === name) {
       return prop;
     }
   }
-
   return 0;
 }
 
-function setProperty(child, parent, name, writable, enumerable, configurable) {
+function setProperty(value, parent, name, w, e, c) {
 
   var obj;
 
   // for debug
-  if (typeof parent !== 'number' || typeof child !== 'number') {
+  if (typeof parent !== 'number' || typeof value !== 'number') {
     throw "Convert object to object id for setProperty";
   }
 
@@ -669,86 +907,21 @@ function setProperty(child, parent, name, writable, enumerable, configurable) {
     return;
   }
 
-  // if (this.isa(obj, this.STRING)) {
-  // var n = this.arrayIndex(name);
-  // if (name == 'length' || (!isNaN(n) && n < obj.data.length)) {
-  // // Can't set length or letters on Strings.
-  // return;
-  // }
-  // }
-
-  // if (this.isa(obj, this.ARRAY)) {
-  // // Arrays have a magic length variable that is bound to the elements.
-  // var i;
-  // if (name == 'length') {
-  // // Delete elements if length is smaller.
-  // var newLength = this.arrayIndex(value.toNumber());
-  // if (isNaN(newLength)) {
-  // throw new RangeError('Invalid array length');
-  // }
-  // if (newLength < obj.length) {
-  // for (i in obj.properties) {
-  // i = this.arrayIndex(i);
-  // if (!isNaN(i) && newLength <= i) {
-  // delete obj.properties[i];
-  // }
-  // }
-  // }
-  // obj.length = newLength;
-  // return; // Don't set a real length property.
-  // }
-  // else if (!isNaN(i = this.arrayIndex(name))) {
-  // // Increase length if this index is larger.
-  // obj.length = Math.max(obj.length, i + 1);
-  // }
-  // }
-
-  // Set the property.
-  // obj.properties[name] = value;
-  // if (opt_fixed) {
-  // obj.fixed[name] = true;
-  // }
-  // if (opt_nonenum) {
-  // obj.nonenumerable[name] = true;
-  // }
-
   var prop = searchProperty(parent, name);
 
   if (prop === 0) {
-
-    var property = {
-
-      type : 'property',
-
-      child : 0,
-      name : 0,
-      nextInObject : 0,
-      nextInSlot : 0,
-
-      count : 0,
-      referrer : [],
-
-      parent : parent,
-
-      writable : (writable === true) ? true : false,
-      enumerable : (enumerable === true) ? true : false,
-      configurable : (configurable === true) ? true : false,
-    };
-    var id = register(property);
-
-    set(child, id, 'child');
-    set(name, id, 'name');
+    var id = createProperty(parent, name, value, 0, 0, w, e, c);
 
     set(getObject(parent).property, id, 'nextInObject');
     set(id, parent, 'property');
 
     hashProperty(id);
   }
-  else if (getObject(prop).writable === false) {
+  else if (getObject(prop).WRITABLE === false) {
     return;
   }
   else {
-    set(child, prop, 'child');
+    set(value, prop, 'VALUE');
   }
 }
 
@@ -759,10 +932,10 @@ function deleteProperty(property) {
   var propObj = getObject(property);
   var parent = propObj.parent;
   var name = propObj.name;
-  var child = propObj.child;
+  var value = propObj.VALUE;
 
   if (propObj.property === property) {
-    set(child, parent, 'property');
+    set(value, parent, 'property');
     return;
   }
 
@@ -781,24 +954,22 @@ function deleteProperty(property) {
   }
 }
 
-function setPropertyByLiteral(child, parent, nameLiteral, writable, enumerable,
-    configurable) {
+function setPropertyByLiteral(value, parent, nameLiteral, w, e, c) {
 
   var type = typeOfObject(parent);
   if (type !== 'object' && type !== 'function') {
     throw "error";
   }
 
-  // var name = this.createPrimitive(nameLiteral);
   var name = createString(nameLiteral);
-  setProperty(child, parent, name, writable, enumerable, configurable);
+  setProperty(value, parent, name, w, e, c);
 }
 
 function deepSearchProperty(object, name) {
 
   for (var x = object; x !== 0; x = getObject(x).PROTOTYPE) {
 
-    var prop = this.searchProperty(x, name);
+    var prop = searchProperty(x, name);
 
     if (prop !== undefined) {
       return prop;
@@ -808,26 +979,75 @@ function deepSearchProperty(object, name) {
 
 function getProperty(parent, name) {
 
-  var prop = this.deepSearchProperty(parent, name);
+  var prop = deepSearchProperty(parent, name);
 
   if (prop === undefined) {
     return JS_UNDEFINED;
   }
-  var id = getObject(prop).child;
+  var id = getObject(prop).VALUE;
   return (id === 0) ? JS_UNDEFINED : id;
 }
 
 objectProto = Object.create(typeProto);
 
-objectProto.GET = function(propertyName) {
+/*-
+ * 8.12.1 [[GetOwnProperty]] (P)
+ */
 
-};
-
+/**
+ * This function returns host-type undefined or PropertyDescriptor
+ */
 objectProto.GET_OWN_PROPERTY = function(propertyName) {
 
+  assert(typeOfObject(propertyName) === STRING_TYPE);
+
+  var prop = searchProperty(this, propertyName);
+  if (prop === 0) {
+    return undefined;
+  }
+  var X = getObject(prop);
+
+  var D = new PropertyDescriptor();
+
+  if (X.isDataProperty()) {
+    D.VALUE = X.VALUE;
+    D.WRITABLE = X.WRITABLE;
+  }
+  else if (X.isAccessorProperty()) {
+    D.GET = X.GET;
+    D.SET = X.SET;
+  }
+  else {
+    throw "error";
+  }
+
+  D.ENUMERABLE = X.ENUMERABLE;
+  D.CONFIGURABLE = X.CONFIGURABLE;
+
+  return D;
 };
 
 objectProto.GET_PROPTERTY = function(propertyName) {
+
+  var pdesc = this.GET_OWN_PROPERTY(propertyName);
+  if (pdesc !== undefined) {
+    return pdesc;
+  }
+
+  var proto = this.PROTOTYPE;
+  if (proto === 0) {
+    return undefined;
+  }
+
+  return proto.GET_PROPERTY(propertyName);
+};
+
+objectProto.GET = function(propertyName) {
+
+  var desc = this.GET_PROPERTY();
+  if (desc === undefined) {
+    return JS_UNDEFINED;
+  }
 
 };
 
@@ -891,42 +1111,31 @@ function createObject(proto) {
 
   var id = register(obj);
 
-  // if (proto !== 0) {
-  // set(proto, id, 'PROTOTYPE');
-  // }
-
-  // Functions have prototype objects.
-  // if (this.FUNCTION_PROTO !== undefined && this.isa(id, this.FUNCTION_PROTO))
-  // {
-  // obj.type = 'function';
-  // var pid = createObject(this.OBJECT_PROTO);
-  // this.setPropertyByLiteral(pid, id, 'prototype', true, false, false);
-  // }
-  //
-  // if (this.ARRAY_PROTO !== undefined && this.isa(id, this.ARRAY_PROTO)) {
-  // }
-
   return id;
 }
 
-function createObjectObject(PROTO, tag) {
+function createObjectObject(PROTO, extensible, tag) {
 
-  if (typeof PROTO !== 'number') {
+  if (typeof PROTO !== 'number' || typeof extensible !== 'boolean') {
+    throw "error";
+  }
+
+  if (PROTO !== JS_NULL && typeOfObject(PROTO) !== OBJECT_TYPE) {
     throw "error";
   }
 
   var id = createObject(objectProto);
   var obj = getObject(id);
   obj.CLASS = OBJECT_CLASS;
+  obj.EXTENSIBLE = extensible;
   obj.tag = tag;
 
-  if (PROTO !== 0) {
-    set(PROTO, id, 'PROTOTYPE');
-  }
+  set(PROTO, id, 'PROTOTYPE');
+
   return id;
 }
 
-function createFunctionObject(PROTO, tag) {
+function createFunctionObject(PROTO, extensible, tag) {
 
   if (typeof PROTO !== 'number' || PROTO === 0) {
     throw "error";
@@ -935,6 +1144,7 @@ function createFunctionObject(PROTO, tag) {
   var id = createObject(functionProto);
   var obj = getObject(id);
   obj.CLASS = FUNCTION_CLASS;
+  obj.EXTENSIBLE = extensible;
   obj.tag = tag;
 
   set(PROTO, id, 'PROTOTYPE');
@@ -957,20 +1167,27 @@ function createArrayObject(PROTO, tag) {
 }
 
 /**
- * Create a new native function.
+ * The native function should be called 'host function'
  * 
- * @param {!Function}
- *          nativeFunc JavaScript function.
- * @return {!Object} New function.
+ * @param nativeFunc
+ * @param extensible
+ * @param tag
+ * @returns
  */
-function createNativeFunction(nativeFunc, tag) {
+function createNativeFunction(nativeFunc, extensible, tag) {
 
   if (FUNCTION_PROTO === 0) {
     throw "FUNCTION_PROTO not initialized.";
   }
 
+  assert(typeof nativeFunc === 'function');
+  assert(typeof extensible === 'boolean');
+  if (tag !== undefined) {
+    assert(typeof tag === 'string');
+  }
+
   // create object
-  var func = createFunctionObject(FUNCTION_PROTO, tag);
+  var func = createFunctionObject(FUNCTION_PROTO, extensible, tag);
 
   // set native func
   var funcObj = getObject(func);
@@ -984,12 +1201,40 @@ function createNativeFunction(nativeFunc, tag) {
 
 /**
  * 
+ * @param label
+ * @param lexSize
+ * @param length
+ * @returns
  */
-function ECMAPropertyDescriptor() {
+function createFunction(label, lexSize, length) {
 
-  this.isDataPropertyDescriptor = false;
-  this.isAccessorPropertyDescriptor = false;
-};
+  if (FUNCTION_PROTO === 0) {
+    throw "FUNCTION_PROTOtype not initialized.";
+  }
+
+  // assume all user created function are extensible
+  var id = createFunctionObject(FUNCTION_PROTO, true);
+  var obj = getObject(id);
+
+  obj.label = label;
+  obj.lexicals = 0; // referencing field
+
+  if (lexSize !== 0) {
+    var lex = createVector(lexSize);
+    set(lex, id, 'lexicals');
+  }
+
+  var len = createNumber(length);
+  setPropertyByLiteral(len, id, 'length', true, true, true);
+
+  var prototype = createObjectObject(OBJECT_PROTO, true);
+  setPropertyByLiteral(prototype, id, 'prototype', true, true, true);
+  return id;
+}
+
+function bootstrap() {
+
+}
 
 /**
  * for other parts of vm object, see initBootstrap function.
@@ -998,462 +1243,12 @@ function RedbankVM() {
 
   this.PC = 0;
   this.FP = 0;
-
   this.PCStack = [];
   this.FPStack = [];
-
   this.ErrorStack = [];
-  // this.Stack = [];
-
-  // string hash table
-  // StringHash = [];
-  // property hash table
-  // this.PropertyHash = [];
-
-  // used for debug purpose
-  // this.objectSnapshot = [];
-  // this.stringHashSnapshot = [];
-  // this.propertyHashSnapshot = [];
-
-  // bytecode array
   this.code = {};
-  // testcase
   this.testcase = {};
 }
-
-RedbankVM.prototype.createTrap = function(catchLabel, finalLabel, stackLength) {
-
-  var trap = {
-    type : 'trap',
-
-    count : 0,
-    referrer : [],
-
-    catchLabel : catchLabel,
-    finalLabel : finalLabel,
-    stackLength : stackLength,
-    param : 0, // referencing field
-  };
-
-  return register(trap);
-};
-
-/**
- * ECMA262 8.7 The Reference Specification Type
- */
-RedbankVM.prototype.ECMAReferenceType = function(base, referencedName, strict) {
-
-  /**
-   * check base type, environment_record is not implemented in redbank.
-   */
-  var baseType = typeOfObject(base);
-  if (!(baseType === 'undefined' || baseType === 'object'
-      || baseType === 'boolean' || baseType === 'string'
-      || baseType === 'number' || 'environment_record')) {
-    throw "error";
-  }
-
-  /**
-   * check referencedName and strict
-   */
-  if (typeOfObject(referencedName) !== 'string' || typeof strict !== 'boolean') {
-    throw "error";
-  }
-
-  var ref = {
-    type : 'ecma_reference',
-
-    base : base,
-    referencedName : referencedName,
-    strict : strict,
-  };
-
-  return ref;
-};
-
-RedbankVM.prototype.GetBase = function(V) {
-  return V.base;
-};
-
-RedbankVM.prototype.GetReferencedName = function(V) {
-  return V.referencedName;
-};
-
-RedbankVM.prototype.IsStrictReference = function(V) {
-  return V.strict;
-};
-
-RedbankVM.prototype.HasPrimitiveBase = function(V) {
-  var baseType = typeOfObject(V.base);
-  if (baseType === 'boolean' || baseType === 'string' || baseType === 'number') {
-    return true;
-  }
-  return false;
-};
-
-RedbankVM.prototype.IsPropertyReference = function(V) {
-  var baseType = typeOfObject(V.base);
-  if (baseType === 'object' || this.HasPrimitiveBase(V)) {
-    return true;
-  }
-  return false;
-};
-
-RedbankVM.prototype.IsUnresolvableReference = function(V) {
-  var baseType = typeOfObject(V.base);
-  if (baseType === 'undefined') {
-    return true;
-  }
-  return false;
-};
-
-RedbankVM.prototype.GetValue = function(V) {
-
-  if (typeof V === 'number') {
-    throw 'error';
-  }
-
-  if (V.type !== 'ecma_reference') {
-    return V;
-  }
-
-  var base = this.GetBase(V);
-  if (this.IsUnresolvableReference(V)) {
-    this.THROW(this.REFERENCE_ERROR);
-  }
-
-  var get;
-  if (this.IsPropertyReference(V)) {
-    if (false === this.HasPrimitiveBase(V)) {
-      get = 0;
-    }
-    else {
-      get = function(this_, P) {
-        var O = this.ToObject(base);
-        var desc = O.__GetProperty__(P);
-        if (desc === undefined) {
-          return undefined;
-        }
-
-        if (IsDataDescriptor(desc) === true) {
-          return desc.__Value__;
-        }
-
-        this.assert(true === this.IsAccessorDescriptor(desc));
-
-        var getter = desc.__Get__;
-        if (getter === undefined) {
-          return undefined;
-        }
-
-        return getter.__Call__(base);
-      };
-    }
-
-    base
-  }
-  else {
-    // must be environment record
-
-  }
-};
-
-/**
- * Retrieve object by id
- * 
- * @param id
- * @returns
- */
-// RedbankVM.prototype.getObject = function(id) {
-// return ObjectHeap[id];
-// };
-//
-// RedbankVM.prototype.typeOfObject = function(id) {
-// return ObjectHeap[id].type;
-// };
-/**
- * add object to array and return id
- * 
- * @param obj
- * @returns {Number}
- */
-// RedbankVM.prototype.register = function(obj) {
-//
-// if (obj.type === undefined) {
-// throw "error";
-// }
-//
-// ObjectHeap.push(obj);
-// var id = ObjectHeap.length - 1;
-// obj.id = id; // back annotation
-// return id;
-// };
-/**
- * 
- * remove object out of array
- * 
- * @param id
- */
-// RedbankVM.prototype.unregister = function(id) {
-//
-// var obj = ObjectHeap[id];
-// this.assert(obj.count === 0);
-// console.log("[[ Object " + id + " (" + obj.type + ") being removed ]]");
-// ObjectHeap[id] = undefined;
-// };
-/**
- * may be problematic, examine it! TODO
- * 
- * @param child
- * @param parent
- * @returns
- */
-RedbankVM.prototype.isa = function(child, parent) {
-
-  if (typeof child !== 'number' || typeof parent !== 'number') {
-    throw "wrong input";
-  }
-  if (child === 0) {
-    return false;
-  }
-  if (child === parent) {
-    return true;
-  }
-  if (ObjectHeap[child].PROTOTYPE === parent) {
-    return true;
-  }
-  child = ObjectHeap[child].PROTOTYPE;
-  return this.isa(child, parent);
-};
-
-RedbankVM.prototype.internFindStringDeprecated = function(string) {
-
-  var hash = HASH(string);
-
-  hash = hash >>> (32 - STRING_HASHBITS);
-
-  var id = StringHash[hash];
-
-  if (id === undefined) {
-    throw "undefined is illegal value for StringHash table slot";
-  }
-
-  if (id === 0) {
-    return;
-  }
-
-  for (; id !== 0; id = getObject(id).nextInSlot) {
-    var obj = ObjectHeap[id];
-
-    if (obj.type !== 'string') {
-      throw "not a string";
-    }
-
-    if (obj.value === string) {
-      return id;
-    }
-  }
-};
-
-RedbankVM.prototype.internNewStringDeprecated = function(id) {
-
-  var obj = getObject(id);
-
-  var str = obj.value;
-
-  var hash = HASH(str);
-  obj.interned = true;
-  obj.hash = hash;
-
-  hash = hash >>> (32 - STRING_HASHBITS); // drop 20 bits, 12 bit left
-
-  set(StringHash[hash], id, 'nextInSlot');
-  set(id, this.id, 'StringHash', hash);
-};
-
-RedbankVM.prototype.uninternStringDeprecated = function(id) {
-
-  var obj = getObject(id);
-
-  this.assert(obj.type === 'string');
-
-  var hash = obj.hash;
-  hash = hash >>> (32 - STRING_HASHBITS); // shake off 20 bits
-
-  if (StringHash[hash] === id) {
-
-    set(getObject(id).nextInSlot, this.id, 'StringHash', hash);
-    return;
-  }
-
-  for (var curr = StringHash[hash];; curr = getObject(curr).nextInSlot) {
-    var next = getObject(curr).nextInSlot;
-    if (next === 0) {
-      throw "not found in StringHash";
-    }
-
-    if (next === id) {
-      var nextnext = getObject(next).nextInSlot;
-      set(nextnext, curr, 'nextInSlot');
-      return;
-    }
-  }
-};
-
-/**
- * 
- * This function increment the reference count of object id
- * 
- * The object/name/index is pushed into object id's referrer queue, for
- * debugging purpose.
- * 
- * @param id
- * @param object
- * @param name
- * @param index
- */
-RedbankVM.prototype.incrREFDeprecated = function(id, object, name, index) {
-
-  // if (name === 'nextInSlot') {
-  // throw 'error';
-  // }
-
-  if (object === undefined) {
-    throw "error";
-  }
-
-  if (id === 0) {
-    return;
-  }
-
-  var obj = getObject(id);
-
-  obj.count++;
-  obj.referrer.push({
-    object : object,
-    name : name,
-    index : index
-  });
-};
-
-RedbankVM.prototype.decrREFDeprecated = function(id, object, name, index) {
-
-  var i;
-
-  if (id === 0) {
-    return;
-  }
-
-  var obj = getObject(id);
-  if (obj === undefined || obj.referrer.length === 0) {
-    throw "error";
-  }
-
-  for (i = 0; i < obj.referrer.length; i++) {
-    if (index === undefined) {
-      if (obj.referrer[i].object === object && obj.referrer[i].name === name) {
-        break;
-      }
-    }
-    else {
-      if (obj.referrer[i].object === object && obj.referrer[i].name === name
-          && obj.referrer[i].index === index) {
-        break;
-      }
-    }
-  }
-
-  if (i === obj.referrer.length) {
-    throw "error, referrer not found";
-  }
-
-  obj.referrer.splice(i, 1);
-  obj.count--;
-
-  if (obj.count === 1 && obj.type === 'string') {
-
-    this.uninternString(id); // uninterning string will cause it be removed.
-    return;
-  }
-
-  if (obj.count === 0) {
-
-    switch (obj.type) {
-    case 'addr':
-      break;
-
-    case 'boolean':
-      break;
-
-    case 'number':
-      break;
-
-    case 'string':
-      this.decrREF(obj.nextInSlot, id, 'nextInSlot');
-      break;
-
-    case 'link':
-      this.decrREF(obj.target, id, 'target');
-      break;
-
-    case 'property':
-      this.decrREF(obj.name, id, 'name'); // recycle name string
-      this.decrREF(obj.child, id, 'child'); // recycle child
-      this.decrREF(obj.nextInObject, id, 'nextInObject'); // recycle next
-      break;
-
-    case 'function':
-      // recycle lexicals
-      for (i = 0; i < obj.lexicals.length; i++) {
-        this.decrREF(obj.lexicals[i], id, 'lexicals', i);
-      }
-
-    case 'object':
-      // recycle all property hash
-      for (var curr = obj.property; curr !== 0; curr = getObject(curr).nextInObject) {
-        this.unhashProperty(curr);
-      }
-
-      // recycle prototype
-      set(0, id, 'PROTOTYPE');
-
-      // recycle root property
-      set(0, id, 'property');
-      break;
-
-    case 'trap':
-      this.decrREF(obj.param, id, 'param');
-      break;
-
-    default:
-      throw "not implemented.";
-    }
-
-    unregister(id);
-  }
-};
-
-/**
- * Factory for (indexed) addr object
- * 
- * @param addrType
- * @param index
- * @returns
- */
-RedbankVM.prototype.createAddr = function(addrType, index) {
-
-  var addr = {
-    type : 'addr',
-
-    count : 0,
-    referrer : [],
-
-    addrType : addrType,
-    index : index,
-  };
-  var id = register(addr);
-  return id;
-};
 
 /**
  * 
@@ -1474,217 +1269,9 @@ RedbankVM.prototype.createLink = function(target) {
   return id;
 };
 
-//
-//
-// /**
-// * Create a primitive Javascript value object
-// *
-// * If the value is a string, it is automatically interned.
-// *
-// * @param value
-// * @param tag
-// * @param builtin
-// * @returns
-// */
-// RedbankVM.prototype.createPrimitive = function(value, tag, builtin) {
-//
-// var id;
-//
-// // check if value is js primitive
-// if (!(value === null || // ECMAScript bug according to MDN
-// typeof value === 'string' || typeof value === 'number'
-// || typeof value === 'boolean' || typeof value === 'undefined')) {
-// throw "value is NOT primitive";
-// }
-//
-// // string intern
-// if (typeof value === 'string') {
-// id = internFindString(value);
-// if (id !== 0) {
-// return id;
-// }
-// }
-//
-// // null, string, number, boolean, undefined
-// var primitive = {
-// type : typeof value,
-//
-// count : 0,
-// referrer : [],
-//
-// isPrimitive : true,
-// value : value,
-// tag : tag,
-//
-// };
-// id = register(primitive, builtin);
-//
-// // string intern
-// if (typeof value === 'string') {
-// primitive.nextInSlot = 0;
-// internNewString(id);
-// }
-//
-// return id;
-// };
-
-RedbankVM.prototype.createFunction = function(label, lexnum, length) {
-
-  if (this.FUNCTION_PROTO === undefined || this.FUNCTION_PROTO === null) {
-    throw "FUNCTION_PROTOtype not initialized.";
-  }
-
-  var id = this.createObject(this.FUNCTION_PROTO);
-  
-  var obj = ObjectHeap[id];
-  obj.label = label;
-  obj.lexicals = [];
-  obj.lexnum = lexnum;
-
-  for (var i = 0; i < lexnum; i++) {
-    obj.lexicals[i] = 0;
-  }
-
-  var l = this.createPrimitive(length);
-  this.setPropertyByLiteral(l, id, 'length', true, true, true);
-  return id;
-};
-
-/**
- * ECMA 8.12.1 [[GetOwnProperty]](P)
- * 
- * @param O
- *          a native ECMAScript Object
- * @param P
- *          a String
- * @returns ECMAPropertyDescriptor or JS_UNDEFINED
- */
-RedbankVM.prototype.__GetOwnProperty__ = function(O, P) {
-
-  this.assert(typeOfObject(O) === 'object');
-  this.assert(typeOfObject(P) === 'string');
-
-  var nameObj = getObject(P);
-  if (nameObj.interned !== true) {
-    throw 'error';
-  }
-
-  // 1. If O doesn’t have an own property with name P, return undefined.
-  if (0 === this.searchProperty(O, P)) {
-    return JS_UNDEFINED;
-  }
-
-  // 2. Let D be a newly created Property Descriptor with no fields.
-  var D = {};
-
-  // 3. Let X be O’s own property named P.
-  var X = this.searchProperty(O, P);
-  var XObj = getObject(X);
-
-  // 4. If X is a data property, then
-  if (XObj.isDataProperty === true) {
-    // a. Set D.[[Value]] to the value of X’s [[Value]] attribute.
-    D.__Value__ = XObj.__Value__;
-    // b. Set D.[[Writable]] to the value of X’s [[Writable]] attribute
-    D.__Writable__ = XObj.__Writable__;
-  }
-  // 5. Else X is an accessor property, so
-  else if (XObj.isAccessorProperty) {
-    // a. Set D.[[Get]] to the value of X’s [[Get]] attribute.
-    D.__Get__ = XObj.__Get__;
-    // b. Set D.[[Set]] to the value of X’s [[Set]] attribute.
-    D.__Set__ = XObj.__Set__;
-  }
-  // 6. Set D.[[Enumerable]] to the value of X’s [[Enumerable]] attribute.
-  D.__Enumerable__ = XObj.__Enumerable__;
-  // 7. Set D.[[Configurable]] to the value of X’s [[Configurable]] attribute.
-  D.__Configurable__ = XObj.__Configurable__;
-  // 8. Return D.
-  return D;
-};
-
-RedbankVM.prototype.__GetProperty__ = function(O, P) {
-
-  var prop = this.__GetOwnProperty__(O, P);
-  if (prop !== undefined) {
-    return prop;
-  }
-
-  var OObj = getObject(O);
-
-  var proto = OObj.__Prototype__;
-  if (proto === null) {
-    return JS_UNDEFINED;
-  }
-
-  return this.__GetProperty__(proto, P); // TODO undefined, null, zero
-};
-
-RedbankVM.prototype.__Get__ = function(O, P) {
-
-  var desc = this.__GetProperty__(O, P);
-  if (desc === undefined) {
-    return JS_UNDEFINED;
-  }
-
-  if (true === this.IsDataDescriptor(desc)) {
-    return desc.__Value__;
-  }
-
-  var getter = desc.__Get__;
-  if (getter === undefined) {
-    return JS_UNDEFINED;
-  }
-
-  return __Call__();
-};
-
-RedbankVM.prototype.createJSArray = function() {
-
-  var arr = this.createObject(this.ARRAY_PROTO);
-};
-
-RedbankVM.prototype.snapshot = function() {
-
-  var i;
-
-  for (i = 0; i < ObjectHeap.length; i++) {
-    if (ObjectHeap[i] !== undefined) {
-      this.objectSnapshot.push(i);
-    }
-  }
-
-  for (i = 0; i < STRING_HASHTABLE_SIZE; i++) {
-    if (StringHash[i] !== 0) {
-      this.stringHashSnapshot.push(i);
-    }
-  }
-
-  for (i = 0; i < PROPERTY_HASHTABLE_SIZE; i++) {
-    if (this.PropertyHash[i] !== 0) {
-      this.propertyHashSnapshot.push(i);
-    }
-  }
-
-  console.log(this.objectSnapshot);
-  console.log(this.stringHashSnapshot);
-  console.log(this.propertyHashSnapshot);
-};
-
-RedbankVM.prototype.createGlobal = function() {
-
-  var id = this.createObject(this.OBJECT_PROTO, "Global Object");
-  var obj = getObject(id);
-  obj.count = Infinity;
-
-  this.JS_GLOBAL = id;
-  this.setPropertyByLiteral(JS_UNDEFINED, this.JS_GLOBAL, 'undefined', false,
-      false, false);
-};
-
 RedbankVM.prototype.bootstrap = function() {
 
-  var i, id, obj, wrapper;
+  var i, id, obj, wrapper, value;
   var vm = this;
 
   MAIN_STACK = createVector(STACK_SIZE_LIMIT, "main stack");
@@ -1697,7 +1284,8 @@ RedbankVM.prototype.bootstrap = function() {
   propertyHashObj = getObject(PROPERTY_HASH);
 
   // value constant
-  JS_UNDEFINED = 0; // also a global property
+  JS_UNDEFINED = 0;
+
   JS_NULL = 0;
   JS_TRUE = 0;
   JS_FALSE = 0;
@@ -1709,22 +1297,17 @@ RedbankVM.prototype.bootstrap = function() {
   JS_NAN = 0;
 
   // built-in prototypes
+
   OBJECT_PROTO = 0;
   FUNCTION_PROTO = 0;
   ARRAY_PROTO = 0;
+
   JS_GLOBAL = 0;
 
   // poison
   register({
     type : 'poison'
   });
-
-  // put vm inside objects array
-  this.type = 'machine';
-  this.count = 0;
-  this.referrer = [];
-  id = register(this);
-  getObject(id).count = Infinity;
 
   /**
    * basic values
@@ -1743,16 +1326,31 @@ RedbankVM.prototype.bootstrap = function() {
 
   /**
    * Object.prototype
+   * 
+   * The value of the [[Prototype]] internal property of the Object prototype
+   * object is null, the value of the [[Class]] internal property is "Object",
+   * and the initial value of the [[Extensible]] internal property is true.
    */
-  OBJECT_PROTO = createObjectObject(0, "Object.prototype");
+  OBJECT_PROTO = createObjectObject(JS_NULL, true, "Object.prototype");
 
   /**
    * Function.prototype
    * 
    * ECMA262:
    * 
-   * The Function prototype is itself a Function object that, when invoked,
-   * accepts any arguments and returns undefined.
+   * The Function prototype object is itself a Function object (its [[Class]] is
+   * "Function") that, when invoked, accepts any arguments and returns
+   * undefined.
+   * 
+   * The value of the [[Prototype]] internal property of the Function prototype
+   * object is the standard built-in Object prototype object (15.2.4). The
+   * initial value of the [[Extensible]] internal property of the Function
+   * prototype object is true.
+   * 
+   * The Function prototype object does not have a valueOf property of its own;
+   * however, it inherits the valueOf property from the Object prototype Object.
+   * 
+   * The length property of the Function prototype object is 0.
    * 
    * Properties to be implemented:
    * 
@@ -1764,16 +1362,12 @@ RedbankVM.prototype.bootstrap = function() {
    * not a constructor
    * 
    */
-  id = createFunctionObject(OBJECT_PROTO, "Function.prototype");
+  id = createFunctionObject(OBJECT_PROTO, true, "Function.prototype");
+  setPropertyByLiteral(createNumber(0), id, 'length', false, false, false);
   FUNCTION_PROTO = id;
 
-  obj = getObject(id);
-  obj.EXTENSIBLE = true;
-
-  // setPropertyByLiteral(id, )
-
   /**
-   * Object (constructor)
+   * Object constructor
    * 
    * TODO: Don't know if it works. Probably not.
    */
@@ -1790,12 +1384,12 @@ RedbankVM.prototype.bootstrap = function() {
     // }
     return createObject(OBJECT_PROTO);
   };
-  id = createNativeFunction(wrapper, "Object Constructor");
-  setPropertyByLiteral(id, OBJECT_PROTO, 'prototype', false, false, false);
+  id = createNativeFunction(wrapper, true, "Object Constructor");
+  setPropertyByLiteral(OBJECT_PROTO, id, 'prototype', false, false, false);
   OBJECT_CONSTRUCTOR = id;
 
   /**
-   * Function (constructor)
+   * Function constructor
    */
   wrapper = function(var_args) {
 
@@ -1833,8 +1427,8 @@ RedbankVM.prototype.bootstrap = function() {
     // vm.createPrimitive(newFunc.node.length), true);
     return newFunc;
   };
-  id = createNativeFunction(wrapper, "Function Constructor");
-  setPropertyByLiteral(id, FUNCTION_PROTO, 'prototype', false, false, false);
+  id = createNativeFunction(wrapper, true, "Function Constructor");
+  setPropertyByLiteral(FUNCTION_PROTO, id, 'prototype', false, false, false);
   FUNCTION_CONSTRUCTOR = id;
 
   /**
@@ -1856,7 +1450,7 @@ RedbankVM.prototype.bootstrap = function() {
   id = register(obj);
   ARRAY_PROTO = id;
 
-  id = createObjectObject(OBJECT_PROTO, "Global Object");
+  id = createObjectObject(OBJECT_PROTO, true, "Global Object");
   JS_GLOBAL = id;
   getObject(id).count = Infinity;
 
@@ -1886,47 +1480,24 @@ RedbankVM.prototype.init = function(mode) {
   // Object.prototype.dummy(), native, for test-only
   wrapper = function() { // This works
     console.log("[[ Object.prototype.dummy() called ]]");
-    return vm.UNDEFINED;
+    return JS_UNDEFINED;
   };
-  id = createNativeFunction(wrapper, "Object.prototype.dummy()");
+  id = createNativeFunction(wrapper, true, "Object.prototype.dummy()");
   setPropertyByLiteral(id, OBJECT_PROTO, 'dummy', false, false, false);
 
   // Object.prototype.toString(), native
   wrapper = function() { // TODO don't know if works
     return vm.createPrimitive(this.toString());
   };
-  id = createNativeFunction(wrapper, "Object.prototype.toString()");
+  id = createNativeFunction(wrapper, true, "Object.prototype.toString()");
   setPropertyByLiteral(id, OBJECT_PROTO, 'toString', true, false, true);
 
   // Object.prototype.valueOf(), native
   wrapper = function() { // TODO don't know if works
     return vm.createPrimitive(this.valueOf());
   };
-  id = createNativeFunction(wrapper, "Object.prototype.valueOf()");
+  id = createNativeFunction(wrapper, true, "Object.prototype.valueOf()");
   setPropertyByLiteral(id, OBJECT_PROTO, 'valueOf', true, false, true);
-
-  // Create stub functions for apply and call.
-  // These are processed as special cases in stepCallExpression.
-  /**
-   * var node = { type : 'FunctionApply_', params : [], id : null, body : null,
-   * start : 0, end : 0 }; this.setProperty(this.FUNCTION.properties.prototype,
-   * 'apply', this .createFunction(node, {}), false, true); var node = { type :
-   * 'FunctionCall_', params : [], id : null, body : null, start : 0, end : 0 };
-   * this.setProperty(this.FUNCTION.properties.prototype, 'call', this
-   * .createFunction(node, {}), false, true); // Function has no parent to
-   * inherit from, so it needs its own mandatory // toString and valueOf
-   * functions. wrapper = function() { return
-   * vm.createPrimitive(this.toString()); };
-   * this.setProperty(this.FUNCTION.properties.prototype, 'toString', this
-   * .createNativeFunction(wrapper), false, true);
-   * this.setProperty(this.FUNCTION, 'toString', this
-   * .createNativeFunction(wrapper), false, true); wrapper = function() { return
-   * vm.createPrimitive(this.valueOf()); };
-   * this.setProperty(this.FUNCTION.properties.prototype, 'valueOf', this
-   * .createNativeFunction(wrapper), false, true);
-   * this.setProperty(this.FUNCTION, 'valueOf',
-   * this.createNativeFunction(wrapper), false, true);
-   */
 };
 
 /**
@@ -1977,7 +1548,6 @@ RedbankVM.prototype.indexOfNativeRET = function() {
  * @returns
  */
 RedbankVM.prototype.TOS = function() {
-  // return mainStackObj.elem[mainStackLength - 1];
   return mainStackObj.elem[mainStackLength - 1];
 };
 
@@ -2023,14 +1593,6 @@ RedbankVM.prototype.assertPropertyHash = function() {
       this.assert(typeOfObject(this.PropertyHash[i]) === 'property');
     }
   }
-};
-
-/**
- * TODO refactoring this function. Out dated.
- */
-RedbankVM.prototype.assert_no_leak = function() {
-
-  return;
 };
 
 /**
@@ -2122,7 +1684,7 @@ RedbankVM.prototype.assertStackLengthEqual = function(len) {
 
 RedbankVM.prototype.assertStackSlotUndefined = function(slot) {
   assert(mainStackLength > slot);
-  assert(mainStackObj.elem[slot] === JS_UNDEFINED); //  mainStackObj.elem[slot]
+  assert(mainStackObj.elem[slot] === JS_UNDEFINED); // mainStackObj.elem[slot]
 };
 
 RedbankVM.prototype.assertStackSlotNumberValue = function(slot, val) {
@@ -2135,10 +1697,10 @@ RedbankVM.prototype.assertStackSlotNumberValue = function(slot, val) {
 RedbankVM.prototype.assertStackSlotBooleanValue = function(slot, val) {
 
   if (val === true) {
-    this.assert(mainStackObj.elem[slot] === this.TRUE);
+    this.assert(mainStackObj.elem[slot] === JS_TRUE);
   }
   else if (val === false) {
-    this.assert(mainStackObj.elem[slot] === this.FALSE);
+    this.assert(mainStackObj.elem[slot] === JS_FALSE);
   }
   else {
     throw "unexpected assert value";
@@ -2161,8 +1723,8 @@ RedbankVM.prototype.assertStackSlotObjectPropertyNumberValue = function(slot,
     var propObj = getObject(prop);
     var nameObj = getObject(propObj.name);
     if (nameObj.value === nameLit) {
-      this.assert(typeOfObject(propObj.child) === 'number');
-      this.assert(getObject(propObj.child).value === val);
+      this.assert(typeOfObject(propObj.VALUE) === 'number');
+      this.assert(getObject(propObj.VALUE).value === val);
       return;
     }
   }
@@ -2173,7 +1735,9 @@ RedbankVM.prototype.assertStackSlotObjectPropertyNumberValue = function(slot,
 RedbankVM.prototype.assertStackSlotFunction = function(slot) {
 
   var id = mainStackObj.elem[slot];
-  this.assert(typeOfObject(id) === 'function');
+
+  assert(typeOfObject(id) === OBJECT_TYPE);
+  assert(classOfObject(id) === FUNCTION_CLASS);
 };
 
 /**
@@ -2202,11 +1766,8 @@ RedbankVM.prototype.push = function(id) {
 
   this.assertDefined(id);
 
-  // var index = mainStackLength;
   var index = mainStackLength;
-  // this.Stack.push(0);
   mainStackObj.elem[mainStackLength++] = 0;
-  // set(id, this.id, 'Stack', index);
   set(id, MAIN_STACK, index);
 };
 
@@ -2220,12 +1781,8 @@ RedbankVM.prototype.esPush = function(id) {
 
 RedbankVM.prototype.pop = function() {
 
-  var id = this.TOS();
-  // set(0, this.id, 'Stack', this.indexOfTOS());
   set(0, MAIN_STACK, this.indexOfTOS());
-  // this.Stack.pop();
   mainStackLength--;
-  return; // don't return id, may be undefined
 };
 
 RedbankVM.prototype.fetcha = function() {
@@ -2257,10 +1814,12 @@ RedbankVM.prototype.fetcha = function() {
     if (typeOfObject(mainStackObj.elem[index]) === 'link') {
       linkObj = getObject(mainStackObj.elem[index]);
 
-      set(linkObj.target, this.id, 'Stack', this.indexOfTOS());
+      // set(linkObj.target, this.id, 'Stack', this.indexOfTOS());
+      set(linkObj.target, MAIN_STACK, this.indexOfTOS());
     }
     else {
-      set(mainStackObj.elem[index], this.id, 'Stack', this.indexOfTOS());
+      // set(mainStackObj.elem[index], this.id, 'Stack', this.indexOfTOS());
+      set(mainStackObj.elem[index], MAIN_STACK, this.indexOfTOS());
     }
   }
   else if (addrObj.addrType === ADDR_LEXICAL) {
@@ -2270,24 +1829,30 @@ RedbankVM.prototype.fetcha = function() {
     // get function object id
     var fid = mainStackObj.elem[this.FP - 1];
 
-    // assert it's a function
-    this.assert(typeOfObject(fid) === 'function');
+    assertFunctionObject(fid);
 
     // get object
     var funcObj = getObject(fid);
+    var lex = funcObj.lexicals;
+    var lexObj = getObject(lex);
+
+    assert(lex > 0);
+    assert(lexObj.size > index);
 
     // assert index not out-of-range
-    this.assert(funcObj.lexnum > index);
+    // this.assert(funcObj.lexnum > index);
 
     // retrieve link
-    var link = funcObj.lexicals[index];
+    // var link = funcObj.lexicals[index];
+    var link = lexObj.elem[index];
 
     // assert link
-    this.assert(typeOfObject(link) === 'link');
+    assert(typeOfObject(link) === LINK_TYPE);
 
     linkObj = getObject(link);
 
-    set(linkObj.target, this.id, 'Stack', this.indexOfTOS());
+    // set(linkObj.target, this.id, 'Stack', this.indexOfTOS());
+    set(linkObj.target, MAIN_STACK, this.indexOfTOS());
   }
   else if (addrObj.addrType === ADDR_PROPERTY) { // propAddr -- obj
 
@@ -2306,20 +1871,21 @@ RedbankVM.prototype.fetcha = function() {
 };
 
 /**
- * parent, prop -- child
+ * parent, prop -- value
  */
 RedbankVM.prototype.fetcho = function() {
 
   this.assertString(this.TOS());
   this.assertJSObject(this.NOS());
 
-  var id = this.getProperty(this.NOS(), this.TOS());
-  set(id, this.id, 'Stack', this.indexOfNOS());
+  var id = getProperty(this.NOS(), this.TOS());
+  // set(id, this.id, 'Stack', this.indexOfNOS());
+  set(id, MAIN_STACK, this.indexOfNOS());
   this.pop();
 };
 
 /**
- * parent, prop -- parent, child
+ * parent, prop -- parent, value
  */
 RedbankVM.prototype.fetchof = function() {
 
@@ -2374,7 +1940,9 @@ RedbankVM.prototype.storeOrAssignToAddress = function(mode) {
     // get function object id
     var func = mainStackObj.elem[this.FP - 1];
     var funcObj = getObject(func);
-    var link = funcObj.lexicals[index];
+    var lex = funcObj.lexicals;
+    var lexObj = getObject(lex);
+    var link = lexObj.elem[index];
 
     set(id, link, 'target');
   }
@@ -2409,7 +1977,7 @@ RedbankVM.prototype.storeOrAssignToObject = function(mode) {
   this.assertString(this.NOS());
   this.assertJSObject(this.ThirdOS());
 
-  this.setProperty(this.TOS(), this.ThirdOS(), this.NOS(), true, true, true);
+  setProperty(this.TOS(), this.ThirdOS(), this.NOS(), true, true, true);
 
   if (mode === 'store') {
     this.pop();
@@ -2417,7 +1985,8 @@ RedbankVM.prototype.storeOrAssignToObject = function(mode) {
     this.pop();
   }
   else if (mode === 'assign') {
-    set(this.TOS(), this.id, 'Stack', this.indexOfThirdOS());
+    // set(this.TOS(), this.id, 'Stack', this.indexOfThirdOS());
+    set(this.TOS(), MAIN_STACK, this.indexOfThirdOS());
     this.pop();
     this.pop();
   }
@@ -2481,7 +2050,8 @@ RedbankVM.prototype.printLexicals = function() {
   }
 
   var fid = mainStackObj.elem[this.FP - 1];
-  this.assert(typeOfObject(fid) === 'function');
+  assert(typeOfObject(fid) === OBJECT_TYPE);
+  assert(classOfObject(fid) === FUNCTION_CLASS);
 
   var funcObj = getObject(fid);
 
@@ -2525,13 +2095,22 @@ RedbankVM.prototype.stepCapture = function(bytecode) {
 
   var index, id, link;
 
-  this.assert(typeOfObject(this.TOS()) === 'function');
+  assert(typeOfObject(this.TOS()) === OBJECT_TYPE);
+  assert(classOfObject(this.TOS()) === FUNCTION_CLASS);
 
-  /**
-   * arg1 is the capture source, local, param, or lexical arg2 is the slot from
-   * source arg3 is the slot to target
+  var funcObj = getObject(this.TOS());
+  var lex = funcObj.lexicals;
+  // var lexObj = getObject(lex);
+
+  /*-
+   * arg1 is the capture source, local, param, or lexical. 
+   * arg2 is the slot from source. 
+   * arg3 is the slot to target.
    */
   if (bytecode.arg1 === "argument" || bytecode.arg1 === "local") {
+    // capture from stack
+
+    // index is the stack index
     if (bytecode.arg1 === "argument") {
       index = this.pid2sid(bytecode.arg2);
     }
@@ -2539,24 +2118,35 @@ RedbankVM.prototype.stepCapture = function(bytecode) {
       index = this.lid2sid(bytecode.arg2);
     }
 
+    // retrieve object to be captured
     id = mainStackObj.elem[index];
+
+    // if already a link
     if (typeOfObject(id) === 'link') {
-      set(id, this.TOS(), 'lexicals', bytecode.arg3);
+      // set(id, this.TOS(), 'lexicals', bytecode.arg3);
+      set(id, lex, bytecode.arg3);
     }
     else {
       // create a link, this will incr ref to target
       link = this.createLink(id);
       // TOS() is the function object
-      set(link, this.TOS(), 'lexicals', bytecode.arg3);
-      set(link, this.id, 'Stack', index);
+      // set(link, this.TOS(), 'lexicals', bytecode.arg3);
+      set(link, lex, bytecode.arg3);
+      // set(link, this.id, 'Stack', index);
+      set(link, MAIN_STACK, index);
     }
   }
   else if (bytecode.arg1 === "lexical") {
+    // capture from lex
 
     var funcFrom = mainStackObj.elem[this.FP - 1];
     var funcFromObj = getObject(funcFrom);
-    link = funcFromObj.lexicals[bytecode.arg2];
-    set(link, this.TOS(), 'lexicals', bytecode.arg3);
+    var lexFrom = funcFromObj.lexicals;
+
+    // link = funcFromObj.lexicals[bytecode.arg2];
+    link = lexFrom.elem[bytecode.arg2];
+    // set(link, this.TOS(), 'lexicals', bytecode.arg3);
+    set(link, lex, bytecode.arg3);
   }
   else {
     throw "unknown capture from region";
@@ -2565,10 +2155,11 @@ RedbankVM.prototype.stepCapture = function(bytecode) {
 
 RedbankVM.prototype.stepCall = function() {
 
-  this.assert(typeOfObject(this.TOS()) === 'function');
-
   var fid = this.TOS();
   var fObj = getObject(fid);
+
+  assert(typeOfObject(fid) === OBJECT_TYPE);
+  assert(classOfObject(fid) === FUNCTION_CLASS);
 
   if (fObj.nativeFunc === undefined) {
     this.PCStack.push(this.PC);
@@ -2900,10 +2491,10 @@ RedbankVM.prototype.stepBinop = function(binop) {
     this.pop();
 
     if (equality) {
-      this.push(this.TRUE);
+      this.push(JS_TRUE);
     }
     else {
-      this.push(this.FALSE);
+      this.push(JS_FALSE);
     }
   }
   else {
@@ -2944,16 +2535,16 @@ RedbankVM.prototype.step = function(code, bytecode) {
     this.fetcha();
     break;
 
-  case "FETCHO": // parent, prop -- child
+  case "FETCHO": // parent, prop -- value
     this.fetcho();
     break;
 
-  case "FETCHOF": // parent, prop -- parent, child
+  case "FETCHOF": // parent, prop -- parent, value
     this.fetchof();
     break;
 
   case "FUNC": // -- f1
-    id = this.createFunction(bytecode.arg1, bytecode.arg2, bytecode.arg3);
+    id = createFunction(bytecode.arg1, bytecode.arg2, bytecode.arg3);
     this.push(id);
     break;
 
@@ -2964,10 +2555,10 @@ RedbankVM.prototype.step = function(code, bytecode) {
     break;
 
   case "JUMPC":
-    if (this.TOS() === this.FALSE) {
+    if (this.TOS() === JS_FALSE) {
       this.PC = this.findLabel(this.code, bytecode.arg2);
     }
-    else if (this.TOS() !== this.TRUE) {
+    else if (this.TOS() !== JS_TRUE) {
       throw "non-boolean value on stack";
     }
 
@@ -2981,23 +2572,24 @@ RedbankVM.prototype.step = function(code, bytecode) {
   case "LITA":
     // push an address, may be local, param, or closed
     if (bytecode.arg1 === "LOCAL") {
-      this.push(this.createAddr(ADDR_LOCAL, bytecode.arg2));
+      this.push(createAddr(ADDR_LOCAL, bytecode.arg2));
     }
     else if (bytecode.arg1 === 'PARAM') {
-      this.push(this.createAddr(ADDR_PARAM, bytecode.arg2));
+      this.push(createAddr(ADDR_PARAM, bytecode.arg2));
     }
     else if (bytecode.arg1 === 'LEXICAL') {
-      this.push(this.createAddr(ADDR_LEXICAL, bytecode.arg2));
+      this.push(createAddr(ADDR_LEXICAL, bytecode.arg2));
     }
     else if (bytecode.arg1 === "PROP") {
-      this.push(this.createPrimitive(bytecode.arg2));
+      // this.push(this.createPrimitive(bytecode.arg2));
+      this.push(createString(bytecode.arg2));
     }
-    else if (bytecode.arg1 === "JS_GLOBAL") {
-      this.push(this.JS_GLOBAL);
-      this.push(this.createPrimitive(bytecode.arg2)); // string name
+    else if (bytecode.arg1 === "GLOBAL") {
+      this.push(JS_GLOBAL);
+      this.push(createString(bytecode.arg2)); // string name
     }
     else if (bytecode.arg1 === "CATCH") {
-      this.push(this.createAddr(ADDR_CATCH, bytecode.arg2));
+      this.push(createAddr(ADDR_CATCH, bytecode.arg2));
     }
     else {
       throw "not supported yet";
@@ -3023,7 +2615,7 @@ RedbankVM.prototype.step = function(code, bytecode) {
     break;
 
   case "LITG":
-    this.push(this.JS_GLOBAL);
+    this.push(JS_GLOBAL);
     break;
 
   case "LITN":
@@ -3035,7 +2627,7 @@ RedbankVM.prototype.step = function(code, bytecode) {
 
   case "LITO":
     // create an empty object and push to stack
-    id = this.createObject(this.OBJECT_PROTO);
+    id = createObjectObject(OBJECT_PROTO, true);
     this.push(id);
     break;
 
@@ -3086,7 +2678,8 @@ RedbankVM.prototype.step = function(code, bytecode) {
       }
 
       // overwrite
-      set(result, this.id, "Stack", this.indexOfRET());
+      // set(result, this.id, "Stack", this.indexOfRET());
+      set(result, MAIN_STACK, this.indexOfRET());
 
       while (mainStackLength > this.FP) {
         this.pop();
@@ -3125,7 +2718,7 @@ RedbankVM.prototype.step = function(code, bytecode) {
     this.assertNonAddr(this.TOS());
     this.assertString(this.NOS());
     this.assertJSObject(this.ThirdOS());
-    this.setProperty(this.TOS(), this.ThirdOS(), this.NOS(), true, true, true);
+    setProperty(this.TOS(), this.ThirdOS(), this.NOS(), true, true, true);
 
     this.pop();
     this.pop();
@@ -3218,7 +2811,6 @@ RedbankVM.prototype.run = function(input, testcase, initmode) {
 
   this.printstack();
   this.printLexicals();
-  this.assert_no_leak();
 };
 
 module.exports = RedbankVM;

@@ -2,24 +2,13 @@
  * New node file
  */
 
-function vm() {
-  this.a = 10;
-}
-
-vm.prototype.hello = function() {
-  console.log("world");
-  console.log(this.a);
+var a = function() {
+  console.log(arguments.length);
+  console.log(arguments[0]);
+  console.log(arguments[1]);
+  console.log(arguments[2]);
+  arguments[3] = 10;
+  console.log(arguments[3]);
 };
 
-var b = new vm();
-
-b.hello();
-
-function vm2() {
-
-  var a = 10;
-  var b = 20;
-
-  var c = function() {
-  };
-}
+a(1, 2, 3);
