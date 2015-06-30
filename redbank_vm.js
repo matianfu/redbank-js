@@ -13,16 +13,18 @@
  * ... 
  * local [1] 
  * local [0]      <- FP
- * function FP - 1 
- * this FP - 2 
- * argc FP - 3 
- * param [argc - 1] 
+ * argc           <- FP - 1  
+ * param [argc - 1]
  * ... 
- * param [0]
+ * param [0]      <- FP - 1 - argc
+ * THIS           <- FP - 1 - argc - 1
+ * FUNCTION       <- FP - 1 - argc - 1 - 1
  * 
  ******************************************************************************/
 
 var Common = require('./common.js');
+
+var NO_TESTCASE_ASSERTION = true
 
 var ADDR_LOCAL = 'local';
 var ADDR_PARAM = 'param';
@@ -105,6 +107,8 @@ var mainStackObj;
 
 var ERROR_STACK = 0;
 var errorStackObj;
+
+var MACHINE;
 
 function ecmaIsAccessorDescriptor(desc) {
   if (desc === undefined) {
@@ -233,9 +237,42 @@ function assert(expr) {
   }
 }
 
-function assertFunctionObject(id) {
+function assertValid(id) {
+  if (typeof id !== 'number' || id < 0 || id >= ObjectHeap.length) {
+    throw "assert fail, id is NOT zero or positive number";
+  }
+}
+
+function assertDefined(id) {
+
+  assertValid(id);
+  if (getObject(id) === undefined) {
+    throw "assert fail, undefined object id";
+  }
+}
+
+function assertType(id, type) {
+
+  assertDefined(id);
+  assert(typeOfObject(id) === type);
+}
+
+function assertEcmaLangObject(id) {
+
+  assertDefined(id);
   assert(typeOfObject(id) === OBJECT_TYPE);
-  assert(classOfObject(id) === FUNCTION_CLASS);
+}
+
+function assertEcmaLangType(id) {
+
+  assertDefined(id);
+  assert(getObject(id).isEcmaLangType());
+}
+
+function assertClass(id, CLASS) {
+
+  assertEcmaLangObject(id);
+  assert(classOfObject(id) === CLASS);
 }
 
 /**
@@ -450,6 +487,9 @@ typeProto = {
     return false;
   },
 
+  /**
+   * is primitve or is object
+   */
   isEcmaLangType : function() {
     if (this.isPrimitive() || this.isObject()) {
       return true;
@@ -457,6 +497,9 @@ typeProto = {
     return false;
   },
 
+  /**
+   * all ecma language type and specification type
+   */
   isEcmaType : function() {
     if (this.isEcmaLangObject() || this.type === REFERENCE_TYPE
         || this.type === LIST_TYPE || this.type === COMPLETION_TYPE
@@ -514,13 +557,35 @@ function createAddr(addrType, index) {
 
   var obj = Object.create(typeProto);
 
-  obj.type = 'addr';
+  obj.type = ADDR_TYPE;
   obj.count = 0;
   obj.referrer = [];
 
   obj.addrType = addrType;
   obj.index = index;
   return register(obj);
+}
+
+/**
+ * 
+ * @param target
+ * @returns
+ */
+function createLink(target) {
+
+  assertDefined(target);
+
+  var obj = Object.create(typeProto);
+
+  obj.type = LINK_TYPE;
+  obj.count = 0;
+  obj.referrer = [];
+
+  obj.target = 0;
+
+  var id = register(obj);
+  set(target, id, 'target');
+  return id;
 }
 
 /**
@@ -633,14 +698,13 @@ function createNumber(value) {
  */
 function internFindString(string) {
 
+  assert(typeof string === 'string');
+
   var StringHash = getObject(STRING_HASH);
-
   var hash = HASH(string);
-
   hash = hash >>> (32 - STRING_HASHBITS);
 
   var id = StringHash.elem[hash];
-
   if (id === 0) {
     return 0;
   }
@@ -710,7 +774,7 @@ function uninternString(id) {
 
   assert(typeOfObject(id) === STRING_TYPE);
 
-  // this.assert(obj.type === 'string');
+  // assert(obj.type === 'string');
 
   var hash = obj.hash;
   hash = hash >>> (32 - STRING_HASHBITS); // shake off 20 bits
@@ -996,12 +1060,19 @@ objectProto = Object.create(typeProto);
 
 /**
  * This function returns host-type undefined or PropertyDescriptor
+ * 
+ * @param propertyName
  */
 objectProto.GET_OWN_PROPERTY = function(propertyName) {
 
   assert(typeOfObject(propertyName) === STRING_TYPE);
 
-  var prop = searchProperty(this, propertyName);
+  for (var prop = this.property; prop !== 0; prop = getObject(prop).nextInObject) {
+    if (getObject(prop).name === propertyName) {
+      break;
+    }
+  }
+
   if (prop === 0) {
     return undefined;
   }
@@ -1027,6 +1098,9 @@ objectProto.GET_OWN_PROPERTY = function(propertyName) {
   return D;
 };
 
+/**
+ * 
+ */
 objectProto.GET_PROPTERTY = function(propertyName) {
 
   var pdesc = this.GET_OWN_PROPERTY(propertyName);
@@ -1035,13 +1109,16 @@ objectProto.GET_PROPTERTY = function(propertyName) {
   }
 
   var proto = this.PROTOTYPE;
-  if (proto === 0) {
+  if (proto === JS_NULL) {
     return undefined;
   }
 
   return proto.GET_PROPERTY(propertyName);
 };
 
+/**
+ * 
+ */
 objectProto.GET = function(propertyName) {
 
   var desc = this.GET_PROPERTY();
@@ -1049,6 +1126,17 @@ objectProto.GET = function(propertyName) {
     return JS_UNDEFINED;
   }
 
+  if (ecmaIsDataDescriptor(desc)) {
+    return desc.VALUE;
+  }
+
+  assert(ecmaIsAccessorDescriptor());
+
+  if (desc.GET === 0) {
+    return 0;
+  }
+
+  return getObject(desc.GET).CALL(this);
 };
 
 objectProto.PUT = function(propertyName, id, opt) {
@@ -1069,6 +1157,25 @@ objectProto.DELETE = function(propertyName, opt) {
 
 objectProto.DEFAULT_VALUE = function(hint) {
 
+  if (hint === STRING_TYPE) {
+    var toString = this.GET('toString');
+    if (toString && getObject(toString).IS_CALLABLE()) {
+      var str = getObject(toString).CALL(this);
+      if (str.IsPrimitive()) {
+        return str;
+      }
+    }
+
+    var valueOf = this.GET('valueOf');
+    if (valueOf && getObject(toString).IS_CALLABLE()) {
+      var val = getObject(toString).CALL(this);
+      if (str.IsPrimitive()) {
+        return val;
+      }
+    }
+
+    return -1;
+  }
 };
 
 /**
@@ -1085,8 +1192,38 @@ functionProto.CONSTRUCT = function() {
 
 };
 
-functionProto.CALL = function() {
+functionProto.CALL = function(__VA_ARGS__) {
 
+  // at least, this should be provided
+  assert(arguments.length > 0);
+
+  /**
+   * caller
+   */
+  // put function object on stack
+  MACHINE.push(this.id);
+  // put 'this' on stack
+  MACHINE.push(arguments[0]);
+  // put arguments
+  for (var i = 1; i < arguments.length; i++) {
+    MACHINE.push(arguments[i]);
+  }
+  // put argc on stack
+  MACHINE.push(createNumber(arguments.length - 1));
+
+  /**
+   * callee
+   * 
+   * callee is responsible for cleaning up stacks
+   */
+  MACHINE.doCall();
+  
+  /**
+   * after the call, the return value is left on stack
+   */
+  var obj = getObject(MACHINE.TOS());
+  MACHINE.pop();
+  return obj;
 };
 
 functionProto.HAS_INSTANCE = function() {
@@ -1233,43 +1370,6 @@ function createFunction(label, lexSize, length) {
 }
 
 function bootstrap() {
-
-}
-
-/**
- * for other parts of vm object, see initBootstrap function.
- */
-function RedbankVM() {
-
-  this.PC = 0;
-  this.FP = 0;
-  this.PCStack = [];
-  this.FPStack = [];
-  this.ErrorStack = [];
-  this.code = {};
-  this.testcase = {};
-}
-
-/**
- * 
- * @param target
- * @returns
- */
-RedbankVM.prototype.createLink = function(target) {
-
-  var link = {
-    type : 'link',
-    count : 0,
-    referrer : [],
-
-    target : 0,
-  };
-  var id = register(link);
-  set(target, id, 'target');
-  return id;
-};
-
-RedbankVM.prototype.bootstrap = function() {
 
   var i, id, obj, wrapper, value;
   var vm = this;
@@ -1461,6 +1561,213 @@ RedbankVM.prototype.bootstrap = function() {
 
 };
 
+/*******************************************************************************
+ * 
+ * Abstract Abstract Abstract Abstract
+ * 
+ ******************************************************************************/
+
+/**
+ * 9.1 ToPrimitve(Input, PreferredType)
+ */
+function toPrimitive(Input, PreferredType) {
+
+  var type = Input.type;
+
+  if (type === UNDEFINED_TYPE || type === NULL_TYPE || type === BOOLEAN_TYPE
+      || type === NUMBER_TYPE || type === STRING_TYPE) {
+    return Input;
+  }
+
+  assert(type === OBJECT_TYPE);
+
+  return Input.DEFAULT_VALUE(PreferredType);
+}
+
+/**
+ * 9.2 ToBoolean(Input)
+ */
+function toBoolean(Input) {
+
+  var type = Input.type;
+
+  if (type === UNDEFINED_TYPE || type === NULL_TYPE) {
+    return false;
+  }
+
+  if (type === BOOLEAN_TYPE) {
+    return 
+
+    
+
+        
+
+    
+
+  }
+}
+
+/**
+ * ecma262 11.9.3
+ */
+function abstractEqualityComparison(x, y) {
+
+  var typeX = typeOfObject(x);
+  var typeY = typeOfObject(y);
+
+  if (typeX === typeY) {
+
+    if (typeX === UNDEFINED_TYPE || typeX === NULL_TYPE) {
+      return true;
+    }
+
+    if (typeX === NUMBER_TYPE) {
+      if (x === JS_NAN || y === JS_NAN) {
+        return false;
+      }
+      if (getObject(x).value === getObject(y).value) {
+        return true;
+      }
+      if (x === JS_POSITIVE_ZERO && y === JS_NEGATIVE_ZERO
+          || x === JS_NEGATIVE_ZERO && y === JS_POSITIVE_ZERO) {
+        return true;
+      }
+      return false;
+    }
+
+    // 1.d If Type(x) is String, then return true if x and y are exactly the
+    // same sequence of characters (same length and same characters in
+    // corresponding positions). Otherwise, return false.
+    if (typeX === STRING_TYPE) {
+      return (getObject(x).value === getObject(y).value) ? true : false;
+    }
+
+    // 1.e If Type(x) is Boolean, return true if x and y are both true or both
+    // false. Otherwise, return false.
+    if (typeX === BOOLEAN_TYPE) {
+      return (x === y) ? true : false;
+    }
+
+    // 1.f Return true if x and y refer to the same object. Otherwise, return
+    // false.
+    return (x === y) ? true : false;
+  }
+
+  // 2. If x is null and y is undefined, return true.
+  // 3. If x is undefined and y is null, return true.
+  if ((typeX === UNDEFINED_TYPE && typeY === NULL_TYPE)
+      || (typeY === UNDEFINED_TYPE && typeX === NULL_TYPE)) {
+    return true;
+  }
+
+  // 4. If Type(x) is Number and Type(y) is String, return the result of the
+  // comparison x == ToNumber(y).
+  if (typeX === NUMBER_TYPE && typeY === STRING_TYPE) {
+    // TODO
+  }
+
+  // 5. If Type(x) is String and Type(y) is Number, return the result of the
+  // comparison ToNumber(x) == y.
+  if (typeX === STRING_TYPE && typeY === NUMBER_TYPE) {
+    // TODO
+  }
+
+  // 6.If Type(x) is Boolean, return the result of the comparison ToNumber(x) ==
+  // y.
+  if (typeX === BOOLEAN_TYPE) {
+    // TODO
+  }
+
+  // 7. If Type(y) is Boolean, return the result of the comparison x ==
+  // ToNumber(y).
+  if (typeY === BOOLEAN_TYPE) {
+    // TODO
+  }
+
+  // 8. If Type(x) is either String or Number and Type(y) is Object, return the
+  // result of the comparison x == ToPrimitive(y).
+  if ((typeX === STRING_TYPE || typeX === NUMBER_TYPE) && typeY === OBJECT_TYPE) {
+    // TODO
+  }
+
+  // 9. If Type(x) is Object and Type(y) is either String or Number, return the
+  // result of the comparison ToPrimitive(x) == y.
+  if (typeX === OBJECT_TYPE && (typeY === STRING_TYPE || typeY === NUMBER_TYPE)) {
+
+  }
+
+  // 10. return false;
+
+  // TODO not correct yet
+  return (getObject(x).value == getObject(y).value) ? true : false;
+};
+
+/**
+ * ecma262, 11.9.6
+ */
+function strictEqualityComparison(x, y) {
+
+  if (typeOfObject(x) !== typeOfObject(y)) {
+    return false;
+  }
+  if (typeOfObject(x) === 'undefined') {
+    return true;
+  }
+  if (typeOfObject(x) === 'null') {
+    return true;
+  }
+
+  if (typeOfObject(x) === 'number') {
+    if (x === this.NAN || y === this.NAN) {
+      return false;
+    }
+    if (getObject(x).value === getObject(x).value) {
+      return true;
+    }
+    if (getObject(x).value === this.JS_POSITIVE_ZERO
+        && getObject(y).value === this.NEGATIVE_ZERO) {
+      return true;
+    }
+    if (getObject(x).value === this.NEGATIVE_ZERO
+        && getObject(y).value === this.JS_POSITIVE_ZERO) {
+      return true;
+    }
+    return false;
+  }
+
+  if (typeOfObject(x) === 'string') {
+    if (getObject(x).isInterned && getObject(y).isInterned) {
+      if (x === y) {
+        return true;
+      }
+      return false;
+    }
+    if (getObject(x).value === getObject(y).value) {
+      return true;
+    }
+    return false;
+  }
+
+  if (typeOfObject(x) === 'boolean') {
+    return (x === y) ? true : false;
+  }
+  return (x === y) ? true : false;
+}
+
+/**
+ * for other parts of vm object, see initBootstrap function.
+ */
+function RedbankVM() {
+
+  this.PC = 0;
+  this.FP = 0;
+  this.PCStack = [];
+  this.FPStack = [];
+  this.ErrorStack = [];
+  this.code = {};
+  this.testcase = {};
+}
+
 /**
  * init built-in (global) objects and global scope
  * 
@@ -1500,6 +1807,19 @@ RedbankVM.prototype.init = function(mode) {
   setPropertyByLiteral(id, OBJECT_PROTO, 'valueOf', true, false, true);
 };
 
+RedbankVM.prototype.FUNC = function() {
+  var id = mainStackObj.elem[this.FP - 1 - this.ARGC() - 1 - 1];
+  
+  assert(typeOfObject(id) === OBJECT_TYPE);
+  assert(classOfObject(id) === FUNCTION_CLASS);
+  
+  return id;
+};
+
+RedbankVM.prototype.FUNC_OBJ = function() {
+  return getObject(this.FUNC());
+};
+
 /**
  * Get current function's argument count
  * 
@@ -1507,20 +1827,24 @@ RedbankVM.prototype.init = function(mode) {
  * @returns argument count
  */
 RedbankVM.prototype.ARGC = function() {
+  
+  var id = mainStackObj.elem[this.FP - 1];
+  assertType(id, NUMBER_TYPE);
+  return getObject(id).value;
 
   if (this.FP === 0) {
     throw "main function has no args";
   }
 
   var id = mainStackObj.elem[this.FP - 3];
-  this.assertNumber(id);
+  assertType(id, NUMBER_TYPE);
   return getObject(id).value;
 };
 
 RedbankVM.prototype.NativeARGC = function() {
 
   var id = mainStackObj.elem[mainStackLength - 3];
-  this.assertNumber(id);
+  assertType(id, NUMBER_TYPE);
   return getObject(id).value;
 };
 
@@ -1579,128 +1903,35 @@ RedbankVM.prototype.indexOfThirdOS = function() {
   return mainStackLength - 3;
 };
 
-RedbankVM.prototype.assertPropertyHash = function() {
-
-  // TODO
-  return;
-
-  for (var i = 0; i < PROPERTY_HASHTABLE_SIZE; i++) {
-    if (this.PropertyHash[i] === 0) {
-      continue;
-    }
-
-    for (var prop = this.PropertyHash[i]; prop !== 0; prop = getObject(prop).nextInSlot) {
-      this.assert(typeOfObject(this.PropertyHash[i]) === 'property');
-    }
-  }
-};
-
-/**
- * Assert the given id is a valid object id
- * 
- * @param id
- */
-RedbankVM.prototype.assertDefined = function(id) {
-
-  if (typeof id !== 'number' || id < 0) {
-    throw "assert fail, id is NOT zero or positive number";
-  }
-
-  if (getObject(id) === undefined) {
-    throw "assert fail, undefined object id";
-  }
-};
-
-RedbankVM.prototype.assertAddr = function(id) {
-
-  this.assertDefined(id);
-  if (getObject(id).type !== 'addr') {
-    throw "assert fail, given id is NOT an addr";
-  }
-};
-
-RedbankVM.prototype.assertNonAddr = function(id) {
-
-  this.assertDefined(id);
-  if (getObject(id).type === 'addr') {
-    throw "assert fail, given id is an addr";
-  }
-};
-
-RedbankVM.prototype.assertNumber = function(id) {
-
-  this.assertDefined(id);
-  if (getObject(id).type !== 'number') {
-    throw "assert fail, given id is NOT a number";
-  }
-};
-
-RedbankVM.prototype.assertString = function(id) {
-
-  this.assertDefined(id);
-  if (getObject(id).type !== 'string') {
-    throw "assert fail, given id is NOT a string";
-  }
-};
-
-/**
- * both object and function are valid JSObject
- * 
- * @param id
- */
-RedbankVM.prototype.assertJSObject = function(id) {
-
-  this.assertDefined(id);
-
-  var type = getObject(id).type;
-
-  if (type === 'object' || type === 'function') {
+RedbankVM.prototype.assertStackLengthEqual = function(len) {
+  if (NO_TESTCASE_ASSERTION) {
     return;
   }
-
-  throw "assert fail, given id is NEITHER object NOR function";
-};
-
-RedbankVM.prototype.assertAddrLocal = function(id) {
-
-  this.assertAddr(id);
-
-  var obj = getObject(id);
-  this.assert(obj.addrType === ADDR_LOCAL);
-};
-
-/**
- * for external auto test
- */
-RedbankVM.prototype.assert = function(expr) {
-  if (!(expr)) {
-    throw "ASSERT FAIL";
-  }
-};
-
-RedbankVM.prototype.assertStackLengthEqual = function(len) {
   assert(mainStackLength === len);
 };
 
 RedbankVM.prototype.assertStackSlotUndefined = function(slot) {
+  if (NO_TESTCASE_ASSERTION) {
+    return;
+  }
   assert(mainStackLength > slot);
-  assert(mainStackObj.elem[slot] === JS_UNDEFINED); // mainStackObj.elem[slot]
+  assert(mainStackObj.elem[slot] === JS_UNDEFINED);
 };
 
 RedbankVM.prototype.assertStackSlotNumberValue = function(slot, val) {
 
   var obj = getObject(mainStackObj.elem[slot]);
-  this.assert(obj.type === 'number');
-  this.assert(obj.value === val);
+  assert(obj.type === 'number');
+  assert(obj.value === val);
 };
 
 RedbankVM.prototype.assertStackSlotBooleanValue = function(slot, val) {
 
   if (val === true) {
-    this.assert(mainStackObj.elem[slot] === JS_TRUE);
+    assert(mainStackObj.elem[slot] === JS_TRUE);
   }
   else if (val === false) {
-    this.assert(mainStackObj.elem[slot] === JS_FALSE);
+    assert(mainStackObj.elem[slot] === JS_FALSE);
   }
   else {
     throw "unexpected assert value";
@@ -1709,22 +1940,22 @@ RedbankVM.prototype.assertStackSlotBooleanValue = function(slot, val) {
 
 RedbankVM.prototype.assertStackSlotObject = function(slot) {
 
-  this.assert(typeOfObject(mainStackObj.elem[slot]) === 'object');
+  assert(typeOfObject(mainStackObj.elem[slot]) === 'object');
 };
 
 RedbankVM.prototype.assertStackSlotObjectPropertyNumberValue = function(slot,
     nameLit, val) {
 
   var id = mainStackObj.elem[slot];
-  this.assert(typeOfObject(id) === 'object');
+  assert(typeOfObject(id) === 'object');
 
   var obj = getObject(id);
   for (var prop = obj.property; prop !== 0; prop = getObject(prop).nextInObject) {
     var propObj = getObject(prop);
     var nameObj = getObject(propObj.name);
     if (nameObj.value === nameLit) {
-      this.assert(typeOfObject(propObj.VALUE) === 'number');
-      this.assert(getObject(propObj.VALUE).value === val);
+      assert(typeOfObject(propObj.VALUE) === 'number');
+      assert(getObject(propObj.VALUE).value === val);
       return;
     }
   }
@@ -1764,7 +1995,7 @@ RedbankVM.prototype.pid2sid = function(pid) {
 
 RedbankVM.prototype.push = function(id) {
 
-  this.assertDefined(id);
+  assertDefined(id);
 
   var index = mainStackLength;
   mainStackObj.elem[mainStackLength++] = 0;
@@ -1773,7 +2004,7 @@ RedbankVM.prototype.push = function(id) {
 
 RedbankVM.prototype.esPush = function(id) {
 
-  this.assertDefined(id);
+  assertDefined(id);
   var index = this.ErrorStack.length;
   this.ErrorStack.push(0);
   set(id, this.id, 'ErrorStack', index);
@@ -1787,7 +2018,7 @@ RedbankVM.prototype.pop = function() {
 
 RedbankVM.prototype.fetcha = function() {
 
-  this.assertAddr(this.TOS());
+  assertType(this.TOS(), ADDR_TYPE);
 
   var addr = this.TOS();
   var addrObj = getObject(addr);
@@ -1824,12 +2055,13 @@ RedbankVM.prototype.fetcha = function() {
   }
   else if (addrObj.addrType === ADDR_LEXICAL) {
 
-    this.assert(this.FP !== 0);
+    assert(this.FP !== 0);
 
     // get function object id
     var fid = mainStackObj.elem[this.FP - 1];
 
-    assertFunctionObject(fid);
+    // assertFunctionObject(fid);
+    assertClass(fid, FUNCTION_CLASS);
 
     // get object
     var funcObj = getObject(fid);
@@ -1840,7 +2072,7 @@ RedbankVM.prototype.fetcha = function() {
     assert(lexObj.size > index);
 
     // assert index not out-of-range
-    // this.assert(funcObj.lexnum > index);
+    // assert(funcObj.lexnum > index);
 
     // retrieve link
     // var link = funcObj.lexicals[index];
@@ -1875,8 +2107,8 @@ RedbankVM.prototype.fetcha = function() {
  */
 RedbankVM.prototype.fetcho = function() {
 
-  this.assertString(this.TOS());
-  this.assertJSObject(this.NOS());
+  assertType(this.TOS(), STRING_TYPE);
+  assertEcmaLangObject(this.NOS());
 
   var id = getProperty(this.NOS(), this.TOS());
   // set(id, this.id, 'Stack', this.indexOfNOS());
@@ -1889,8 +2121,8 @@ RedbankVM.prototype.fetcho = function() {
  */
 RedbankVM.prototype.fetchof = function() {
 
-  this.assertString(this.TOS());
-  this.assertJSObject(this.NOS());
+  assertType(this.TOS(), STRING_TYPE);
+  assertEcmaLangObject(this.NOS());
 
   var id = this.getProperty(this.NOS(), this.TOS());
   set(id, this.id, 'Stack', this.indexOfTOS());
@@ -1909,8 +2141,8 @@ RedbankVM.prototype.fetchof = function() {
  */
 RedbankVM.prototype.storeOrAssignToAddress = function(mode) {
 
-  this.assertNonAddr(this.TOS());
-  this.assertAddr(this.NOS());
+  assertEcmaLangType(this.TOS());
+  assertType(this.NOS(), ADDR_TYPE);
 
   var id = this.TOS();
   var addr = this.NOS();
@@ -1973,9 +2205,9 @@ RedbankVM.prototype.storeOrAssignToAddress = function(mode) {
  */
 RedbankVM.prototype.storeOrAssignToObject = function(mode) {
 
-  this.assertNonAddr(this.TOS());
-  this.assertString(this.NOS());
-  this.assertJSObject(this.ThirdOS());
+  assertEcmaLangType(this.TOS());
+  assertType(this.NOS(), STRING_TYPE);
+  assertEcmaLangObject(this.ThirdOS());
 
   setProperty(this.TOS(), this.ThirdOS(), this.NOS(), true, true, true);
 
@@ -2049,11 +2281,7 @@ RedbankVM.prototype.printLexicals = function() {
     return;
   }
 
-  var fid = mainStackObj.elem[this.FP - 1];
-  assert(typeOfObject(fid) === OBJECT_TYPE);
-  assert(classOfObject(fid) === FUNCTION_CLASS);
-
-  var funcObj = getObject(fid);
+  var funcObj = this.FUNC_OBJ();
 
   if (funcObj.nativeFunc !== 'undefined') {
     return;
@@ -2128,7 +2356,7 @@ RedbankVM.prototype.stepCapture = function(bytecode) {
     }
     else {
       // create a link, this will incr ref to target
-      link = this.createLink(id);
+      link = createLink(id);
       // TOS() is the function object
       // set(link, this.TOS(), 'lexicals', bytecode.arg3);
       set(link, lex, bytecode.arg3);
@@ -2150,6 +2378,43 @@ RedbankVM.prototype.stepCapture = function(bytecode) {
   }
   else {
     throw "unknown capture from region";
+  }
+};
+
+RedbankVM.prototype.doCall = function() {
+
+  var preserve = this.PCStack.length;
+
+  this.PCStack.push(this.PC);
+  this.FPStack.push(this.FP);
+
+  this.FP = mainStackLength;
+  
+  var argc = mainStackObj.elem[this.FP - 1];
+  var argcObj = getObject(argc);
+  var argcVal = argcObj.value;
+  
+  var func = mainStackObj.elem[this.FP - 1 - argcVal - 1 - 1];
+  var funcObj = getObject(func);
+
+  this.PC = funcObj.label;
+
+  while (this.PCStack.length !== preserve) {
+
+    var bytecode = this.code[this.PC];
+
+    this.printstack();
+    this.printLexicals();
+    console.log(Common.Format.hline);
+    console.log("PC : " + this.PC + ", FP : " + this.FP);
+    console.log("OPCODE: " + bytecode.op + ' '
+        + ((bytecode.arg1 === undefined) ? '' : bytecode.arg1) + ' '
+        + ((bytecode.arg2 === undefined) ? '' : bytecode.arg2) + ' '
+        + ((bytecode.arg3 === undefined) ? '' : bytecode.arg3));
+
+    // like the real
+    this.PC++;
+    this.step(this.code, bytecode);
   }
 };
 
@@ -2193,122 +2458,6 @@ RedbankVM.prototype.stepCall = function() {
   }
 };
 
-/**
- * ecma262 11.9.3
- */
-RedbankVM.prototype.algorithmOfAbstractEqualityComparison = function(x, y) {
-
-  var typeX = typeOfObject(x);
-  var typeY = typeOfObject(y);
-
-  if (typeX === typeY) {
-    if (typeX === 'undefined' || typeX === 'null') {
-      return true;
-    }
-
-    if (typeX === 'number') {
-      if (x === this.NAN || y === this.NAN) {
-        return false;
-      }
-
-      if (getObject(x).value === getObject(y).value) {
-        return true;
-      }
-
-      if (x === this.JS_POSITIVE_ZERO && y === this.NEGATIVE_ZERO
-          || x === this.NEGATIVE_ZERO && y === this.JS_POSITIVE_ZERO) {
-        return true;
-      }
-
-      return false;
-    }
-
-    if (typeX === 'string') {
-      // TODO
-    }
-
-    if (typeX === 'boolean') {
-      // TODO
-    }
-
-    return (x === y) ? true : false;
-  }
-
-  if (typeX === 'undefined' && typeY === 'null' || typeY === 'undefined'
-      && typeX === 'null') {
-    return true;
-  }
-
-  if (typeX === 'number' && typeY === 'string') {
-
-  }
-
-  if (typeX === 'string' && typeY === 'number') {
-
-  }
-
-};
-
-/**
- * ecma262, 11.9.6
- */
-RedbankVM.prototype.algorithmOfStrictEqualityComparison = function(x, y) {
-  if (typeOfObject(x) !== typeOfObject(y)) {
-    return false;
-  }
-
-  if (typeOfObject(x) === 'undefined') {
-    return true;
-  }
-
-  if (typeOfObject(x) === 'null') {
-    return true;
-  }
-
-  if (typeOfObject(x) === 'number') {
-    if (x === this.NAN || y === this.NAN) {
-      return false;
-    }
-
-    if (getObject(x).value === getObject(x).value) {
-      return true;
-    }
-
-    if (getObject(x).value === this.JS_POSITIVE_ZERO
-        && getObject(y).value === this.NEGATIVE_ZERO) {
-      return true;
-    }
-
-    if (getObject(x).value === this.NEGATIVE_ZERO
-        && getObject(y).value === this.JS_POSITIVE_ZERO) {
-      return true;
-    }
-
-    return false;
-  }
-
-  if (typeOfObject(x) === 'string') {
-    if (getObject(x).isInterned && getObject(y).isInterned) {
-      if (x === y) {
-        return true;
-      }
-      return false;
-    }
-
-    if (getObject(x).value === getObject(y).value) {
-      return true;
-    }
-
-    return false;
-  }
-
-  if (typeOfObject(x) === 'boolean') {
-    return (x === y) ? true : false;
-  }
-
-  return (x === y) ? true : false;
-}
-
 RedbankVM.prototype.compare = function(a, b) {
 
   var aObj = getObject(a);
@@ -2336,68 +2485,6 @@ RedbankVM.prototype.compare = function(a, b) {
 };
 
 RedbankVM.prototype.stepBinop = function(binop) {
-
-  // var comp = this.comp(leftSide, rightSide);
-  // if (node.operator == '==' || node.operator == '!=') {
-  // value = comp === 0;
-  // if (node.operator == '!=') {
-  // value = !value;
-  // }
-  // } else if (node.operator == '===' || node.operator == '!==') {
-  // if (leftSide.isPrimitive && rightSide.isPrimitive) {
-  // value = leftSide.data === rightSide.data;
-  // } else {
-  // value = leftSide === rightSide;
-  // }
-  // if (node.operator == '!==') {
-  // value = !value;
-  // }
-  // } else if (node.operator == '>') {
-  // value = comp == 1;
-  // } else if (node.operator == '>=') {
-  // value = comp == 1 || comp === 0;
-  // } else if (node.operator == '<') {
-  // value = comp == -1;
-  // } else if (node.operator == '<=') {
-  // value = comp == -1 || comp === 0;
-  // } else if (node.operator == '+') {
-  // if (leftSide.type == 'string' || rightSide.type == 'string') {
-  // var leftValue = leftSide.toString();
-  // var rightValue = rightSide.toString();
-  // } else {
-  // var leftValue = leftSide.toNumber();
-  // var rightValue = rightSide.toNumber();
-  // }
-  // value = leftValue + rightValue;
-  // } else if (node.operator == 'in') {
-  // value = this.hasProperty(rightSide, leftSide);
-  // } else {
-  // var leftValue = leftSide.toNumber();
-  // var rightValue = rightSide.toNumber();
-  // if (node.operator == '-') {
-  // value = leftValue - rightValue;
-  // } else if (node.operator == '*') {
-  // value = leftValue * rightValue;
-  // } else if (node.operator == '/') {
-  // value = leftValue / rightValue;
-  // } else if (node.operator == '%') {
-  // value = leftValue % rightValue;
-  // } else if (node.operator == '&') {
-  // value = leftValue & rightValue;
-  // } else if (node.operator == '|') {
-  // value = leftValue | rightValue;
-  // } else if (node.operator == '^') {
-  // value = leftValue ^ rightValue;
-  // } else if (node.operator == '<<') {
-  // value = leftValue << rightValue;
-  // } else if (node.operator == '>>') {
-  // value = leftValue >> rightValue;
-  // } else if (node.operator == '>>>') {
-  // value = leftValue >>> rightValue;
-  // } else {
-  // throw 'Unknown binary operator: ' + node.operator;
-  // }
-  // }
 
   var left = this.NOS();
   var right = this.TOS();
@@ -2457,8 +2544,9 @@ RedbankVM.prototype.stepBinop = function(binop) {
     }
   }
   else if (binop === '===') {
-    this.assertNonAddr(this.TOS());
-    this.assertNonAddr(this.NOS());
+
+    assertEcmaLangType(this.TOS());
+    assertEcmaLangType(this.NOS());
 
     var equality;
 
@@ -2658,12 +2746,14 @@ RedbankVM.prototype.step = function(code, bytecode) {
     break;
 
   case "RET":
-    if (this.FP === 0) { // main()
-      while (mainStackLength) {
-        this.pop();
-      }
-      this.PC = this.code.length; // exit
 
+    if (this.FP === 0) { // main()
+    // while (mainStackLength) {
+    // this.pop();
+    // }
+    // this.PC = this.code.length; // exit
+      this.PC = this.PCStack.pop();
+      this.FP = this.FPStack.pop();
     }
     else {
 
@@ -2678,7 +2768,6 @@ RedbankVM.prototype.step = function(code, bytecode) {
       }
 
       // overwrite
-      // set(result, this.id, "Stack", this.indexOfRET());
       set(result, MAIN_STACK, this.indexOfRET());
 
       while (mainStackLength > this.FP) {
@@ -2689,7 +2778,6 @@ RedbankVM.prototype.step = function(code, bytecode) {
       this.pop(); // pop this object
 
       // don't pop argc, ret will be popped.
-      // this.pop(); // argc
       for (i = 0; i < argc; i++) {
         this.pop(); // pop params
       }
@@ -2715,11 +2803,10 @@ RedbankVM.prototype.step = function(code, bytecode) {
 
   case "STOREP": // object key value -- object
 
-    this.assertNonAddr(this.TOS());
-    this.assertString(this.NOS());
-    this.assertJSObject(this.ThirdOS());
+    assertEcmaLangType(this.TOS());
+    assertType(this.NOS(), STRING_TYPE);
+    assertEcmaLangObject(this.ThirdOS());
     setProperty(this.TOS(), this.ThirdOS(), this.NOS(), true, true, true);
-
     this.pop();
     this.pop();
     break;
@@ -2778,39 +2865,30 @@ RedbankVM.prototype.run = function(input, testcase, initmode) {
 
   ObjectHeap = [];
 
-  this.bootstrap();
+  bootstrap();
   this.init(initmode);
 
   this.code = input;
   this.testcase = testcase;
-
+  
   console.log(Common.Format.hline);
   console.log("[[ Start Running ]]");
   console.log(Common.Format.hline);
+  
+  MACHINE = this;
+  var program = createFunction(0, 0, 0);
+  var ret = getObject(program).CALL(JS_GLOBAL);
 
-  while (this.PC < this.code.length) {
-
-    var bytecode = this.code[this.PC];
-
-    this.printstack();
-    this.printLexicals();
-    console.log(Common.Format.hline);
-    console.log("PC : " + this.PC + ", FP : " + this.FP);
-    console.log("OPCODE: " + bytecode.op + ' '
-        + ((bytecode.arg1 === undefined) ? '' : bytecode.arg1) + ' '
-        + ((bytecode.arg2 === undefined) ? '' : bytecode.arg2) + ' '
-        + ((bytecode.arg3 === undefined) ? '' : bytecode.arg3));
-
-    // like the real
-    this.PC++;
-    this.assertPropertyHash();
-    this.step(this.code, bytecode);
-  }
-
-  this.assertPropertyHash();
+  // this assertion assumes the 
+  assert(ret.type === UNDEFINED_TYPE);
 
   this.printstack();
   this.printLexicals();
+
+  console.log(Common.Format.hline);
+  console.log("[[ Stop Running ]]");
+  console.log(Common.Format.hline);
+
 };
 
 module.exports = RedbankVM;
