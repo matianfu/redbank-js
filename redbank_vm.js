@@ -22,9 +22,32 @@
  * 
  ******************************************************************************/
 
+/**
+ * NOTE! on value space
+ * 
+ * ECMA262 specification uses the uniform value space to describe both abstract
+ * (host) and native methods. This is inconvenient for host implementation. It
+ * also has negative impact on performance.
+ * 
+ * For example, the GET_OWN_PROPERTY abstract method possibly returns undefined.
+ * 
+ * In red bank, we do our best to separate native (implemented javascript) value
+ * space and host abstract methods.
+ * 
+ * For example, the GET_OWN_PROPERTY returns a PropertyDescriptor object, which
+ * has isUndefined() method to check it's nullability, rather than return
+ * JS_UNDEFINED, which is a value in native value space.
+ * 
+ * There should be no intersection between native value space and host value
+ * space. Or the conversion must be done in host functions that returns or
+ * modifies values in native space.
+ */
+
 var Common = require('./common.js');
 
 var NO_TESTCASE_ASSERTION = true;
+
+var HOSTTHROW_TYPE_ERROR = -1;
 
 var ADDR_LOCAL = 'local';
 var ADDR_PARAM = 'param';
@@ -154,11 +177,9 @@ function ecmaToPropertyDescriptor(obj) {
   throw "not implemented yet";
 }
 
-/**
- * this data type won't be put into ObjectHeap
- */
-function PropertyDescriptor() {
-  this.type = PROPERTY_DESCRIPTOR_TYPE;
+function ecmaSameValue(x, y) {
+
+  assert(x)
 }
 
 /**
@@ -463,62 +484,66 @@ var JS_GLOBAL = 0;
 var globalObj;
 
 var ecma;
-var typeProto;
-var propertyProto;
-var objectProto;
-var functionProto;
-var arrayProto;
 
-typeProto = {
+var typeProto = {};
 
-  isPrimitive : function() {
-    if (this.type === UNDEFINED_TYPE || this.type === NULL_TYPE
-        || this.type === BOOLEAN_TYPE || this.type === NUMBER_TYPE
-        || this.type === STRING_TYPE) {
-      return true;
-    }
-    return false;
-  },
+var propertyProto = Object.create(typeProto);
+var propertyDescriptorProto = Object.create(typeProto);
+var objectProto = Object.create(typeProto);
 
-  isObject : function() {
-    if (this.type === OBJECT_TYPE) {
-      return true;
-    }
-    return false;
-  },
+var functionProto = Object.create(objectProto);
+var arrayProto = Object.create(objectProto);
+var booleanProto = Object.create(objectProto);
+var numberProto = Object.create(objectProto);
+var stringProto = Object.create(objectProto);
 
-  /**
-   * is primitve or is object
-   */
-  isEcmaLangType : function() {
-    if (this.isPrimitive() || this.isObject()) {
-      return true;
-    }
-    return false;
-  },
-
-  /**
-   * all ecma language type and specification type
-   */
-  isEcmaType : function() {
-    if (this.isEcmaLangObject() || this.type === REFERENCE_TYPE
-        || this.type === LIST_TYPE || this.type === COMPLETION_TYPE
-        || this.type === PROPERTY_DESCRIPTOR_TYPE
-        || this.type === PROPERTY_IDENTIFIER_TYPE
-        || this.type === LEXICAL_ENVIRONMENT_TYPE
-        || this.type === ENVIRONMENT_RECORD_TYPE) {
-      return true;
-    }
-    return false;
-  },
-
-  toPrimitive : function() {
-
-    if (!(this.isEcmaType())) {
-      throw "error";
-    }
-
+typeProto.isPrimitive = function() {
+  if (this.type === UNDEFINED_TYPE || this.type === NULL_TYPE
+      || this.type === BOOLEAN_TYPE || this.type === NUMBER_TYPE
+      || this.type === STRING_TYPE) {
+    return true;
   }
+  return false;
+};
+
+typeProto.isObject = function() {
+  if (this.type === OBJECT_TYPE) {
+    return true;
+  }
+  return false;
+};
+
+/**
+ * is primitve or is object
+ */
+typeProto.isEcmaLangType = function() {
+  if (this.isPrimitive() || this.isObject()) {
+    return true;
+  }
+  return false;
+};
+
+/**
+ * all ecma language type and specification type
+ */
+typeProto.isEcmaType = function() {
+  if (this.isEcmaLangObject() || this.type === REFERENCE_TYPE
+      || this.type === LIST_TYPE || this.type === COMPLETION_TYPE
+      || this.type === PROPERTY_DESCRIPTOR_TYPE
+      || this.type === PROPERTY_IDENTIFIER_TYPE
+      || this.type === LEXICAL_ENVIRONMENT_TYPE
+      || this.type === ENVIRONMENT_RECORD_TYPE) {
+    return true;
+  }
+  return false;
+};
+
+typeProto.toPrimitive = function() {
+
+  if (!(this.isEcmaType())) {
+    throw "error";
+  }
+
 };
 
 function ecmaGetValue(V) {
@@ -869,14 +894,84 @@ function unhashProperty(property) {
   }
 }
 
-propertyProto = Object.create(typeProto);
-
 propertyProto.isDataProperty = function() {
   return (this.VALUE !== 0) ? true : false;
 };
 
 propertyProto.isAccessorProperty = function() {
   return (this.GET !== 0 || this.SET) ? true : false;
+};
+
+/**
+ * using 'new' rather than 'create' as function name prefix to denote that the
+ * object should not be referenced on stack or global. It should be a host
+ * object, either maintained by host itself or allocated on (host) stack, which
+ * is the preferred way.
+ */
+function newPropertyDescriptor() {
+
+  var obj = Object.create();
+  obj.type = PROPERTY_DESCRIPTOR_TYPE;
+
+  obj.GET = undefined;
+  obj.SET = undefined;
+  obj.VALUE = undefined;
+  obj.WRITABLE = undefined;
+  obj.ENUMERABLE = undefined;
+  obj.CONFIGURABLE = undefined;
+
+  return obj;
+}
+
+propertyDescriptorProto.IsUndefined = function() {
+
+  if (this.GET === undefined && this.SET === undefined
+      && this.VALUE === undefined && this.WRITABLE === undefined
+      && this.ENUMERABLE === undefined && this.CONFIGURABLE === undefined) {
+    return true;
+  }
+  return false;
+};
+
+propertyDescriptorProto.IsAccessorDescriptor = function() {
+  if (this.isUndefined()) {
+    return false;
+  }
+  if (this.GET === 0 && this.SET === 0) {
+    return false;
+  }
+  return true;
+};
+
+propertyDescriptorProto.IsDataDescriptor = function() {
+  if (this.isUndefined()) {
+    return false;
+  }
+  if (this.VALUE === undefined && this.WRITABLE === undefined) {
+    return false;
+  }
+  return true;
+};
+
+propertyDescriptorProto.IsGenericDescriptor = function() {
+  if (this.isUndefined()) {
+    return false;
+  }
+  if (this.isAccessorDescriptor() === false
+      && this.isDataDescriptor() === false) {
+    return true;
+  }
+  return false;
+};
+
+propertyDescriptorProto.FromPropertyDescriptor = function() {
+
+  throw "this method should belong to other types.";
+};
+
+propertyDescriptorProto.ToPropertyDescriptor = function(obj) {
+
+  throw "this method should belong to other types.";
 };
 
 function createProperty(parent, name, value, g, s, w, e, c) {
@@ -1049,20 +1144,17 @@ function setPropertyByLiteral(value, parent, nameLiteral, w, e, c) {
   setProperty(value, parent, name, w, e, c);
 }
 
-objectProto = Object.create(typeProto);
-
-/*-
- * 8.12.1 [[GetOwnProperty]] (P)
- */
-
 /**
- * This function returns host-type undefined or PropertyDescriptor
+ * 8.12.1 [[GetOwnProperty]] (P)
  * 
- * @param propertyName
+ * This function returns PropertyDescriptor, which may be 'IsUndefined()'
  */
 objectProto.GET_OWN_PROPERTY = function(propertyName) {
 
   assert(typeOfObject(propertyName) === STRING_TYPE);
+
+  // new undefined
+  var D = newPropertyDescriptor();
 
   for (var prop = this.property; prop !== 0; prop = getObject(prop).nextInObject) {
     if (getObject(prop).name === propertyName) {
@@ -1071,12 +1163,10 @@ objectProto.GET_OWN_PROPERTY = function(propertyName) {
   }
 
   if (prop === 0) {
-    return undefined;
+    return D;
   }
+
   var X = getObject(prop);
-
-  var D = new PropertyDescriptor();
-
   if (X.isDataProperty()) {
     D.VALUE = X.VALUE;
     D.WRITABLE = X.WRITABLE;
@@ -1091,57 +1181,112 @@ objectProto.GET_OWN_PROPERTY = function(propertyName) {
 
   D.ENUMERABLE = X.ENUMERABLE;
   D.CONFIGURABLE = X.CONFIGURABLE;
-
   return D;
 };
 
 /**
+ * 8.12.2 [[GetProperty]] (P)
  * 
+ * This function recursively find property with given name along prototype
+ * chain.
+ * 
+ * This function returns PropertyDescriptor, which may be 'IsUndefined()'
  */
 objectProto.GET_PROPTERTY = function(propertyName) {
 
-  var pdesc = this.GET_OWN_PROPERTY(propertyName);
-  if (pdesc !== undefined) {
-    return pdesc;
+  var desc = this.GET_OWN_PROPERTY(propertyName);
+  if (desc.IsUndefined()) {
+    return desc;
   }
 
   var proto = this.PROTOTYPE;
-  if (proto === JS_NULL) {
-    return undefined;
+  if (proto === JS_NULL) { // PROTOTYPE chains use JS_NULL
+    return newPropertyDescriptor();
   }
-
   return proto.GET_PROPERTY(propertyName);
 };
 
 /**
+ * 8.12.3 [[Get]] (P)
  * 
+ * This function returns NATIVE space value. Object (id) or JS_UNDEFINED
  */
 objectProto.GET = function(propertyName) {
 
   var desc = this.GET_PROPERTY();
-  if (desc === undefined) {
+  if (desc.IsUndefined()) {
     return JS_UNDEFINED;
   }
 
-  if (ecmaIsDataDescriptor(desc)) {
-    return desc.VALUE;
+  if (desc.IsDataDescriptor()) {
+    return desc.VALUE; // TODO? need translation? JS_UNDEFINED?
   }
-
-  assert(ecmaIsAccessorDescriptor());
+  assert(desc.IsAccessorDescriptor());
 
   if (desc.GET === 0) {
-    return 0;
+    return JS_UNDEFINED;
   }
-
-  return getObject(desc.GET).CALL(this);
+  return getObject(desc.GET).CALL(this.id); // CALL will pop value on stack TODO
 };
 
-objectProto.PUT = function(propertyName, id, opt) {
-
-};
-
+/**
+ * 8.12.4 [[CanPut]] (P)
+ * 
+ * This function returns true of false, which is the value in host space.
+ */
 objectProto.CAN_PUT = function(propertyName) {
 
+  var desc = this.GET_OWN_PROPERTY();
+  if (false === desc.IsUndefined()) {
+    if (desc.IsAccessorDescriptor()) {
+      return (undefined === desc.SET) ? false : true;
+    }
+    else { // must be data property descriptor
+      return desc.WRITABLE;
+    }
+  }
+
+  var proto = this.PROTOTYPE;
+  if (proto === JS_NULL) {
+    return this.EXTENSIBLE;
+  }
+
+  var inherited = proto.GET_PROPERTY(propertyName);
+  if (inherited.IsUndefined()) {
+    return this.EXTENSIBLE;
+  }
+
+  if (inherited.IsAccessorDescriptor()) {
+    return (inherited.SET === undefined) ? false : true;
+  }
+
+  assert(inherited.IsDataDescriptor());
+
+  if (this.EXTENSIBLE === false) {
+    return false;
+  }
+
+  return inherited.WRITABLE;
+};
+
+/**
+ * 8.12.5 [[Put]] ( P, V, Throw )
+ */
+objectProto.PUT = function(propertyName, id, Throw) {
+
+  assert(typeof Throw === 'boolean');
+
+  if (this.CAN_PUT(propertyName) === false) {
+    if (Throw) {
+      return HOSTTHROW_TYPE_ERROR;
+    }
+    return;
+  }
+
+  var ownDesc = this.GET_OWN_PROPERTY(propertyName);
+  if (ownDesc.IsDataDescriptor()) {
+    // TODO
+  }
 };
 
 objectProto.HAS_PROPERTY = function(propertyName) {
@@ -1176,14 +1321,110 @@ objectProto.DEFAULT_VALUE = function(hint) {
 };
 
 /**
- * The original definition is (P, Desc, Throw
+ * 8.12.9 [[DefineOwnProperty]] (P, Desc, Throw)
+ * 
+ * In the following algorithm, the term “Reject” means “If Throw is true, then
+ * throw a TypeError exception, otherwise return false”.
+ * 
+ * This function can throw errors. So the return value is contracted as:
+ * 
+ * 1. return 1 for true;
+ * 2. return 0 for false;
+ * 3. return negative value for throw error, such as HOSTTHROW_TYPE_ERROR;
  */
-objectProto.DEFINE_OWN_PROPERTY = function(propertyName, propertyDescriptor,
-    thr) {
+objectProto.DEFINE_OWN_PROPERTY = function(P, Desc, Throw) {
 
+  assert(typeof Throw === 'boolean');
+
+  /**
+   * 1. Let current be the result of calling the [[GetOwnProperty]] internal
+   * method of O with property name P.
+   */
+  var current = this.GET_OWN_PROPERTY(P);
+
+  /**
+   * 2. Let extensible be the value of the [[Extensible]] internal property of
+   * O.
+   */
+  var extensible = this.EXTENSIBLE;
+
+  /**
+   * 3. If current is undefined and extensible is false, then Reject.
+   */
+  // no given named property and object is NOT extensible
+  if (current.IsUndefined() && extensible === false) {
+    if (Throw) {
+      return HOSTTHROW_TYPE_ERROR;
+    }
+    return false;
+  }
+
+  /**
+   * 4. If current is undefined and extensible is true, then
+   */
+  // no given named property but the object is extensible
+  if (current.IsUndefined() && extensible === true) {
+    /**
+     * a. If IsGenericDescriptor(Desc) or IsDataDescriptor(Desc) is true, then
+     */
+    if (Desc.IsGenericDescriptor() || Desc.IsDataDescriptor()) {
+      /**
+       * i. Create an own data property named P of object O whose [[Value]],
+       * [[Writable]], [[Enumerable]] and [[Configurable]] attribute values are
+       * described by Desc. If the value of an attribute field of Desc is
+       * absent, the attribute of the newly created property is set to its
+       * default value.
+       */
+      // TODO
+    }
+    /**
+     * b. Else, Desc must be an accessor Property Descriptor so,
+     */
+    else {
+      /**
+       * i. Create an own accessor property named P of object O whose [[Get]],
+       * [[Set]], [[Enumerable]] and [[Configurable]] attribute values are
+       * described by Desc. If the value of an attribute field of Desc is
+       * absent, the attribute of the newly created property is set to its
+       * default value.
+       */
+      // TODO
+    }
+    /**
+     * C. Return true.
+     */
+    return true;
+  }
+  /**
+   * 5. Return true, if every field in Desc is absent.
+   */
+  // TODO
+  /**
+   * 6. Return true, if every field in Desc also occurs in current and the value
+   * of every field in Desc is the same value as the corresponding field in
+   * current when compared using the SameValue algorithm (9.12).
+   */
+  // TODO
+  /**
+   * 7. If the [[Configurable]] field of current is false then
+   */
+  if (current.CONFIGURABLE === false) {
+    /**
+     * a. Reject, if the [[Configurable]] field of Desc is true.
+     */
+    // TODO
+    /**
+     * b. Reject, if the [[Enumerable]] field of Desc is present and the
+     * [[Enumerable]] fields of current and Desc are the Boolean negation of
+     * each other.
+     */
+    // TODO
+  }
+  /**
+   * 8. If IsGenericDescriptor(Desc) is true, then no further validation is required.
+   */
+  
 };
-
-functionProto = Object.create(objectProto);
 
 functionProto.CONSTRUCT = function() {
 
@@ -1191,8 +1432,15 @@ functionProto.CONSTRUCT = function() {
 
 functionProto.CALL = function(__VA_ARGS__) {
 
-  // at least, this should be provided
+  // at least, thisArg should be provided
   assert(arguments.length > 0);
+
+  if (this.nativeFunc !== undefined) {
+    var thisArg = arguments[0];
+    // use splice to get all the arguments after thisArg;
+    var args = Array.prototype.splice.call(arguments, 1);
+    return this.nativeFunc.apply(thisArg, args);
+  }
 
   /**
    * caller
@@ -1209,8 +1457,6 @@ functionProto.CALL = function(__VA_ARGS__) {
   MACHINE.push(createNumber(arguments.length - 1));
 
   /**
-   * callee
-   * 
    * callee is responsible for cleaning up stacks
    */
   MACHINE.doCall();
@@ -1226,8 +1472,6 @@ functionProto.CALL = function(__VA_ARGS__) {
 functionProto.HAS_INSTANCE = function() {
 
 };
-
-arrayProto = Object.create(typeProto);
 
 function createObject(proto) {
 
@@ -1798,6 +2042,16 @@ RedbankVM.prototype.init = function(mode) {
   setPropertyByLiteral(id, OBJECT_PROTO, 'valueOf', true, false, true);
 };
 
+RedbankVM.prototype.indexOfARGC = function() {
+  var index = this.FP; // point to FP
+  index = index - 1; // point to ARGC
+  return index;
+};
+
+RedbankVM.prototype.indexOfPARAM0 = function() {
+
+};
+
 RedbankVM.prototype.indexOfFUNC = function() {
 
   var index = this.FP; // point to FP
@@ -1838,17 +2092,6 @@ RedbankVM.prototype.ARGC = function() {
   var id = mainStackObj.elem[this.FP - 1];
   assertType(id, NUMBER_TYPE);
   return getObject(id).value;
-};
-
-RedbankVM.prototype.indexOfRET = function() {
-
-  /**
-   * FP -> function object this object argc argx ... arg0
-   */
-
-  var index = this.FP - 3; // now point to argc
-  index = index - this.ARGC();
-  return index; // now point to arg0
 };
 
 /**
@@ -1951,26 +2194,11 @@ RedbankVM.prototype.assertStackSlotFunction = function(slot) {
   assert(classOfObject(id) === FUNCTION_CLASS);
 };
 
-/**
- * convert local index to (absolute) stack index
- * 
- * @param lid
- *          local index (relative to fp)
- * @returns absolute stack index
- */
 RedbankVM.prototype.lid2sid = function(lid) {
   return this.FP + lid;
 };
 
-/**
- * convert parameter index to (absolute) stack index
- * 
- * @param pid
- *          parameter index (relative to parameter[0], calculated from fp)
- * @returns
- */
 RedbankVM.prototype.pid2sid = function(pid) {
-  // return this.FP - 3 - this.ARGC() + pid;
   return this.FP - 1 - this.ARGC() + pid;
 };
 
@@ -2085,7 +2313,7 @@ RedbankVM.prototype.fetcho = function() {
 };
 
 /**
- * parent, prop -- parent, value
+ * parent, propertyName -- parent, value
  */
 RedbankVM.prototype.fetchof = function() {
 
@@ -2370,6 +2598,28 @@ RedbankVM.prototype.stepCapture = function(bytecode) {
   }
 };
 
+// assume return value is on top of stack
+RedbankVM.prototype.doReturn = function() {
+
+  // overwrite function object with result
+  set(this.TOS(), MAIN_STACK, this.indexOfFUNC());
+
+  // pop all temps and locals
+  while (mainStackLength > this.FP) {
+    this.pop();
+  }
+
+  // pop all args, argc, this, but not function (replaced)
+  var num = this.ARGC() + 1 + 1 + 1 - 1;
+  for (var xyz = 0; xyz < num; xyz++) {
+    this.pop();
+  }
+
+  // restore fp and pc
+  this.PC = this.PCStack.pop();
+  this.FP = this.FPStack.pop();
+};
+
 /**
  * This function implement the callee part
  */
@@ -2407,28 +2657,6 @@ RedbankVM.prototype.doCall = function() {
   }
 };
 
-// assume return value is on top of stack
-RedbankVM.prototype.doReturn = function() {
-
-  // overwrite function object with result
-  set(this.TOS(), MAIN_STACK, this.indexOfFUNC());
-
-  // pop all temps and locals
-  while (mainStackLength > this.FP) {
-    this.pop();
-  }
-
-  // pop all args, argc, this, but not function (replaced)
-  var num = this.ARGC() + 1 + 1 + 1 - 1;
-  for (var xyz = 0; xyz < num; xyz++) {
-    this.pop();
-  }
-
-  // restore fp and pc
-  this.PC = this.PCStack.pop();
-  this.FP = this.FPStack.pop();
-};
-
 RedbankVM.prototype.stepCall = function() {
 
   this.PCStack.push(this.PC);
@@ -2441,22 +2669,11 @@ RedbankVM.prototype.stepCall = function() {
   var fObj = this.FUNC_OBJ();
 
   if (fObj.nativeFunc === undefined) {
-    // TODO this is js call js
-    // TODO dup code with doCall
-    // save context
-
-    // set new PC
     this.PC = this.FUNC_OBJ().label;
     return;
   }
 
-  // this is js call native
-  /**
-   * for native call, there is no corresponding RET
-   * 
-   * the native function should return an VM defined value the VM is responsible
-   * for clearing stack like RET is called.
-   */
+  // this is js call host
   var result = fObj.nativeFunc();
 
   this.push(result);
@@ -2674,7 +2891,6 @@ RedbankVM.prototype.step = function(code, bytecode) {
       this.push(createAddr(ADDR_LEXICAL, bytecode.arg2));
     }
     else if (bytecode.arg1 === "PROP") {
-      // this.push(this.createPrimitive(bytecode.arg2));
       this.push(createString(bytecode.arg2));
     }
     else if (bytecode.arg1 === "GLOBAL") {
@@ -2755,7 +2971,7 @@ RedbankVM.prototype.step = function(code, bytecode) {
     if (bytecode.arg1 !== "RESULT") {
       this.push(JS_UNDEFINED);
     }
-    
+
     this.doReturn();
     break;
 
@@ -2824,7 +3040,6 @@ RedbankVM.prototype.step = function(code, bytecode) {
     else {
       throw "don't known how to assign";
     }
-    // this.storeOrAssign('assign');
     break;
 
   default:
