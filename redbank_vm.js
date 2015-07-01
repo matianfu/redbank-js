@@ -13,7 +13,7 @@
  * ... 
  * local [1] 
  * local [0]      <- FP
- * argc           <- FP - 1  
+ * argc           <- FP - 1   argc must be placed on the caller stack
  * param [argc - 1]
  * ... 
  * param [0]      <- FP - 1 - argc
@@ -24,7 +24,7 @@
 
 var Common = require('./common.js');
 
-var NO_TESTCASE_ASSERTION = true
+var NO_TESTCASE_ASSERTION = true;
 
 var ADDR_LOCAL = 'local';
 var ADDR_PARAM = 'param';
@@ -950,6 +950,26 @@ function searchProperty(object, name) {
   return 0;
 }
 
+function deepSearchProperty(object, name) {
+
+  for (var x = object; x !== 0; x = getObject(x).PROTOTYPE) {
+    var prop = searchProperty(x, name);
+    if (prop !== 0) {
+      return prop;
+    }
+  }
+}
+
+function getProperty(parent, name) {
+
+  var prop = deepSearchProperty(parent, name);
+  if (prop === 0) {
+    return JS_UNDEFINED;
+  }
+  var id = getObject(prop).VALUE;
+  return (id === 0) ? JS_UNDEFINED : id;
+}
+
 function setProperty(value, parent, name, w, e, c) {
 
   var obj;
@@ -1027,29 +1047,6 @@ function setPropertyByLiteral(value, parent, nameLiteral, w, e, c) {
 
   var name = createString(nameLiteral);
   setProperty(value, parent, name, w, e, c);
-}
-
-function deepSearchProperty(object, name) {
-
-  for (var x = object; x !== 0; x = getObject(x).PROTOTYPE) {
-
-    var prop = searchProperty(x, name);
-
-    if (prop !== undefined) {
-      return prop;
-    }
-  }
-}
-
-function getProperty(parent, name) {
-
-  var prop = deepSearchProperty(parent, name);
-
-  if (prop === undefined) {
-    return JS_UNDEFINED;
-  }
-  var id = getObject(prop).VALUE;
-  return (id === 0) ? JS_UNDEFINED : id;
 }
 
 objectProto = Object.create(typeProto);
@@ -1217,7 +1214,7 @@ functionProto.CALL = function(__VA_ARGS__) {
    * callee is responsible for cleaning up stacks
    */
   MACHINE.doCall();
-  
+
   /**
    * after the call, the return value is left on stack
    */
@@ -1596,13 +1593,7 @@ function toBoolean(Input) {
   }
 
   if (type === BOOLEAN_TYPE) {
-    return 
-
-    
-
-        
-
-    
+    return;
 
   }
 }
@@ -1807,43 +1798,44 @@ RedbankVM.prototype.init = function(mode) {
   setPropertyByLiteral(id, OBJECT_PROTO, 'valueOf', true, false, true);
 };
 
+RedbankVM.prototype.indexOfFUNC = function() {
+
+  var index = this.FP; // point to FP
+  index = index - 1; // point to ARGC
+  index = index - this.ARGC(); // point to param[0]
+  index = index - 1; // point to THIS object
+  index = index - 1; // point to FUNC object
+  return index;
+};
+
+/**
+ * Return current frame function object
+ * 
+ * @returns
+ */
 RedbankVM.prototype.FUNC = function() {
-  var id = mainStackObj.elem[this.FP - 1 - this.ARGC() - 1 - 1];
-  
+
+  var id = mainStackObj.elem[this.indexOfFUNC()];
+
   assert(typeOfObject(id) === OBJECT_TYPE);
   assert(classOfObject(id) === FUNCTION_CLASS);
-  
+
   return id;
 };
 
 RedbankVM.prototype.FUNC_OBJ = function() {
+
   return getObject(this.FUNC());
 };
 
 /**
  * Get current function's argument count
  * 
- * 
  * @returns argument count
  */
 RedbankVM.prototype.ARGC = function() {
-  
+
   var id = mainStackObj.elem[this.FP - 1];
-  assertType(id, NUMBER_TYPE);
-  return getObject(id).value;
-
-  if (this.FP === 0) {
-    throw "main function has no args";
-  }
-
-  var id = mainStackObj.elem[this.FP - 3];
-  assertType(id, NUMBER_TYPE);
-  return getObject(id).value;
-};
-
-RedbankVM.prototype.NativeARGC = function() {
-
-  var id = mainStackObj.elem[mainStackLength - 3];
   assertType(id, NUMBER_TYPE);
   return getObject(id).value;
 };
@@ -1859,13 +1851,6 @@ RedbankVM.prototype.indexOfRET = function() {
   return index; // now point to arg0
 };
 
-RedbankVM.prototype.indexOfNativeRET = function() {
-
-  var index = mainStackLength - 3; // now point to argc
-  index = index - this.NativeARGC();
-  return index; // now point to arg0
-};
-
 /**
  * Top of stack
  * 
@@ -1875,28 +1860,20 @@ RedbankVM.prototype.TOS = function() {
   return mainStackObj.elem[mainStackLength - 1];
 };
 
-RedbankVM.prototype.indexOfTOS = function() {
-  return mainStackLength - 1;
-};
-
-/**
- * Next on stack
- * 
- * @returns
- */
-RedbankVM.prototype.indexOfNOS = function() {
-  return mainStackLength - 2;
-};
-
 RedbankVM.prototype.NOS = function() {
   return mainStackObj.elem[this.indexOfNOS()];
 };
 
-/**
- * The 3rd on stack
- */
 RedbankVM.prototype.ThirdOS = function() {
   return mainStackObj.elem[mainStackLength - 3];
+};
+
+RedbankVM.prototype.indexOfTOS = function() {
+  return mainStackLength - 1;
+};
+
+RedbankVM.prototype.indexOfNOS = function() {
+  return mainStackLength - 2;
 };
 
 RedbankVM.prototype.indexOfThirdOS = function() {
@@ -1907,20 +1884,20 @@ RedbankVM.prototype.assertStackLengthEqual = function(len) {
   if (NO_TESTCASE_ASSERTION) {
     return;
   }
-  assert(mainStackLength === len);
+  assert(mainStackLength - this.FP === len);
 };
 
 RedbankVM.prototype.assertStackSlotUndefined = function(slot) {
   if (NO_TESTCASE_ASSERTION) {
     return;
   }
-  assert(mainStackLength > slot);
-  assert(mainStackObj.elem[slot] === JS_UNDEFINED);
+  assert(mainStackLength - this.FP > slot);
+  assert(mainStackObj.elem[this.FP + slot] === JS_UNDEFINED);
 };
 
 RedbankVM.prototype.assertStackSlotNumberValue = function(slot, val) {
 
-  var obj = getObject(mainStackObj.elem[slot]);
+  var obj = getObject(mainStackObj.elem[this.FP + slot]);
   assert(obj.type === 'number');
   assert(obj.value === val);
 };
@@ -1928,10 +1905,10 @@ RedbankVM.prototype.assertStackSlotNumberValue = function(slot, val) {
 RedbankVM.prototype.assertStackSlotBooleanValue = function(slot, val) {
 
   if (val === true) {
-    assert(mainStackObj.elem[slot] === JS_TRUE);
+    assert(mainStackObj.elem[this.FP + slot] === JS_TRUE);
   }
   else if (val === false) {
-    assert(mainStackObj.elem[slot] === JS_FALSE);
+    assert(mainStackObj.elem[this.FP + slot] === JS_FALSE);
   }
   else {
     throw "unexpected assert value";
@@ -1946,7 +1923,7 @@ RedbankVM.prototype.assertStackSlotObject = function(slot) {
 RedbankVM.prototype.assertStackSlotObjectPropertyNumberValue = function(slot,
     nameLit, val) {
 
-  var id = mainStackObj.elem[slot];
+  var id = mainStackObj.elem[this.FP + slot];
   assert(typeOfObject(id) === 'object');
 
   var obj = getObject(id);
@@ -1965,8 +1942,11 @@ RedbankVM.prototype.assertStackSlotObjectPropertyNumberValue = function(slot,
 
 RedbankVM.prototype.assertStackSlotFunction = function(slot) {
 
-  var id = mainStackObj.elem[slot];
+  if (NO_TESTCASE_ASSERTION) {
+    return;
+  }
 
+  var id = mainStackObj.elem[this.FP + slot];
   assert(typeOfObject(id) === OBJECT_TYPE);
   assert(classOfObject(id) === FUNCTION_CLASS);
 };
@@ -1990,7 +1970,8 @@ RedbankVM.prototype.lid2sid = function(lid) {
  * @returns
  */
 RedbankVM.prototype.pid2sid = function(pid) {
-  return this.FP - 3 - this.ARGC() + pid;
+  // return this.FP - 3 - this.ARGC() + pid;
+  return this.FP - 1 - this.ARGC() + pid;
 };
 
 RedbankVM.prototype.push = function(id) {
@@ -2057,33 +2038,21 @@ RedbankVM.prototype.fetcha = function() {
 
     assert(this.FP !== 0);
 
-    // get function object id
-    var fid = mainStackObj.elem[this.FP - 1];
-
-    // assertFunctionObject(fid);
-    assertClass(fid, FUNCTION_CLASS);
-
     // get object
-    var funcObj = getObject(fid);
+    var funcObj = this.FUNC_OBJ();
     var lex = funcObj.lexicals;
     var lexObj = getObject(lex);
 
     assert(lex > 0);
     assert(lexObj.size > index);
 
-    // assert index not out-of-range
-    // assert(funcObj.lexnum > index);
-
     // retrieve link
-    // var link = funcObj.lexicals[index];
     var link = lexObj.elem[index];
 
     // assert link
     assert(typeOfObject(link) === LINK_TYPE);
 
     linkObj = getObject(link);
-
-    // set(linkObj.target, this.id, 'Stack', this.indexOfTOS());
     set(linkObj.target, MAIN_STACK, this.indexOfTOS());
   }
   else if (addrObj.addrType === ADDR_PROPERTY) { // propAddr -- obj
@@ -2111,7 +2080,6 @@ RedbankVM.prototype.fetcho = function() {
   assertEcmaLangObject(this.NOS());
 
   var id = getProperty(this.NOS(), this.TOS());
-  // set(id, this.id, 'Stack', this.indexOfNOS());
   set(id, MAIN_STACK, this.indexOfNOS());
   this.pop();
 };
@@ -2124,8 +2092,14 @@ RedbankVM.prototype.fetchof = function() {
   assertType(this.TOS(), STRING_TYPE);
   assertEcmaLangObject(this.NOS());
 
-  var id = this.getProperty(this.NOS(), this.TOS());
-  set(id, this.id, 'Stack', this.indexOfTOS());
+  var func = getProperty(this.NOS(), this.TOS());
+
+  // remove string
+  this.pop();
+  // dup
+  this.push(this.TOS());
+  // set to NOS
+  set(func, MAIN_STACK, this.indexOfNOS());
 };
 
 /**
@@ -2170,8 +2144,8 @@ RedbankVM.prototype.storeOrAssignToAddress = function(mode) {
   }
   else if (addrObj.addrType === ADDR_LEXICAL) {
     // get function object id
-    var func = mainStackObj.elem[this.FP - 1];
-    var funcObj = getObject(func);
+    // var func = mainStackObj.elem[this.FP - 1];
+    var funcObj = this.FUNC_OBJ();
     var lex = funcObj.lexicals;
     var lexObj = getObject(lex);
     var link = lexObj.elem[index];
@@ -2261,15 +2235,30 @@ RedbankVM.prototype.printstack = function() {
             + obj.index);
         break;
       case 'object':
-        console.log(i + " : " + id + " (object) ref: " + obj.count);
+        switch (obj.CLASS) {
+        case OBJECT_CLASS:
+          console.log(i + " : " + id + " (object) ref: " + obj.count);
+          break;
+        case FUNCTION_CLASS:
+          var appendix = (obj.nativeFunc !== undefined) ? "[native] " + obj.tag
+              : "non-native";
+          console.log(i + " : " + id + " (function) " + appendix);
+          break;
+        default:
+          console.log("unknown object class");
+        }
+
         break;
-      case 'function':
-        var appendix = (obj.nativeFunc !== undefined) ? "[native] " + obj.tag
-            : "non-native";
-        console.log(i + " : " + id + " (function) " + appendix);
-        break;
+
       default:
         throw "unknown type";
+      }
+
+      for (var x = 0; x < this.FPStack.length; x++) {
+        if (i === this.FPStack[x] || i === this.FP) {
+          console.log("---------------");
+          break;
+        }
       }
     }
   }
@@ -2381,23 +2370,22 @@ RedbankVM.prototype.stepCapture = function(bytecode) {
   }
 };
 
+/**
+ * This function implement the callee part
+ */
 RedbankVM.prototype.doCall = function() {
 
+  // preserve the PCStack length for detecting call completion
   var preserve = this.PCStack.length;
 
+  // save context
   this.PCStack.push(this.PC);
   this.FPStack.push(this.FP);
 
+  // set new FP
   this.FP = mainStackLength;
-  
-  var argc = mainStackObj.elem[this.FP - 1];
-  var argcObj = getObject(argc);
-  var argcVal = argcObj.value;
-  
-  var func = mainStackObj.elem[this.FP - 1 - argcVal - 1 - 1];
-  var funcObj = getObject(func);
-
-  this.PC = funcObj.label;
+  // set new PC
+  this.PC = this.FUNC_OBJ().label;
 
   while (this.PCStack.length !== preserve) {
 
@@ -2405,6 +2393,7 @@ RedbankVM.prototype.doCall = function() {
 
     this.printstack();
     this.printLexicals();
+
     console.log(Common.Format.hline);
     console.log("PC : " + this.PC + ", FP : " + this.FP);
     console.log("OPCODE: " + bytecode.op + ' '
@@ -2418,22 +2407,50 @@ RedbankVM.prototype.doCall = function() {
   }
 };
 
+// assume return value is on top of stack
+RedbankVM.prototype.doReturn = function() {
+
+  // overwrite function object with result
+  set(this.TOS(), MAIN_STACK, this.indexOfFUNC());
+
+  // pop all temps and locals
+  while (mainStackLength > this.FP) {
+    this.pop();
+  }
+
+  // pop all args, argc, this, but not function (replaced)
+  var num = this.ARGC() + 1 + 1 + 1 - 1;
+  for (var xyz = 0; xyz < num; xyz++) {
+    this.pop();
+  }
+
+  // restore fp and pc
+  this.PC = this.PCStack.pop();
+  this.FP = this.FPStack.pop();
+};
+
 RedbankVM.prototype.stepCall = function() {
 
-  var fid = this.TOS();
-  var fObj = getObject(fid);
+  this.PCStack.push(this.PC);
+  this.FPStack.push(this.FP);
 
-  assert(typeOfObject(fid) === OBJECT_TYPE);
-  assert(classOfObject(fid) === FUNCTION_CLASS);
+  // set new FP
+  this.FP = mainStackLength;
+
+  var fid = this.FUNC();
+  var fObj = this.FUNC_OBJ();
 
   if (fObj.nativeFunc === undefined) {
-    this.PCStack.push(this.PC);
-    this.FPStack.push(this.FP);
-    this.PC = fObj.label;
-    this.FP = mainStackLength;
+    // TODO this is js call js
+    // TODO dup code with doCall
+    // save context
+
+    // set new PC
+    this.PC = this.FUNC_OBJ().label;
     return;
   }
 
+  // this is js call native
   /**
    * for native call, there is no corresponding RET
    * 
@@ -2442,20 +2459,8 @@ RedbankVM.prototype.stepCall = function() {
    */
   var result = fObj.nativeFunc();
 
-  // save argc before being (possibly) overwritten
-  var argc = this.NativeARGC();
-
-  // overwrite
-  set(result, this.id, "Stack", this.indexOfNativeRET());
-
-  this.pop(); // pop function object
-  this.pop(); // pop this object
-
-  // don't pop argc, ret may be popped.
-  // this.pop(); // argc
-  for (var i = 0; i < argc; i++) {
-    this.pop(); // pop params
-  }
+  this.push(result);
+  this.doReturn();
 };
 
 RedbankVM.prototype.compare = function(a, b) {
@@ -2746,46 +2751,12 @@ RedbankVM.prototype.step = function(code, bytecode) {
     break;
 
   case "RET":
-
-    if (this.FP === 0) { // main()
-    // while (mainStackLength) {
-    // this.pop();
-    // }
-    // this.PC = this.code.length; // exit
-      this.PC = this.PCStack.pop();
-      this.FP = this.FPStack.pop();
+    var result;
+    if (bytecode.arg1 !== "RESULT") {
+      this.push(JS_UNDEFINED);
     }
-    else {
-
-      var result;
-      var argc = this.ARGC();
-
-      if (bytecode.arg1 === "RESULT") {
-        result = this.TOS();
-      }
-      else {
-        result = JS_UNDEFINED;
-      }
-
-      // overwrite
-      set(result, MAIN_STACK, this.indexOfRET());
-
-      while (mainStackLength > this.FP) {
-        this.pop();
-      }
-
-      this.pop(); // pop function object
-      this.pop(); // pop this object
-
-      // don't pop argc, ret will be popped.
-      for (i = 0; i < argc; i++) {
-        this.pop(); // pop params
-      }
-
-      // restore fp and pc
-      this.PC = this.PCStack.pop();
-      this.FP = this.FPStack.pop();
-    }
+    
+    this.doReturn();
     break;
 
   case "STORE": // addr n1 --
@@ -2870,16 +2841,16 @@ RedbankVM.prototype.run = function(input, testcase, initmode) {
 
   this.code = input;
   this.testcase = testcase;
-  
+
   console.log(Common.Format.hline);
   console.log("[[ Start Running ]]");
   console.log(Common.Format.hline);
-  
+
   MACHINE = this;
   var program = createFunction(0, 0, 0);
   var ret = getObject(program).CALL(JS_GLOBAL);
 
-  // this assertion assumes the 
+  // this assertion assumes the
   assert(ret.type === UNDEFINED_TYPE);
 
   this.printstack();

@@ -272,7 +272,6 @@ FunctionNode.prototype.emitLabel = function(label) {
 FunctionNode.prototype.fillArguments = function() {
 
   var i;
-
   if (this.astnode.type === "Program") {
     return;
   }
@@ -812,6 +811,14 @@ FunctionNode.prototype.compileCallExpression = function(ast) {
     this.emit("LITN", 1);
     return;
   }
+  
+  // put callee, may evaluate to lvalue TODO
+  this.compileAST(ast.callee);
+  
+  // put this as global
+  if (ast.callee.type !== 'MemberExpression') {
+    this.emit("LITG");
+  }
 
   // put arguments
   for (var i = 0; i < ast.arguments.length; i++) {
@@ -820,14 +827,6 @@ FunctionNode.prototype.compileCallExpression = function(ast) {
 
   // put argc
   this.emit("LITC", ast.arguments.length);
-
-  // put this as global
-  if (ast.callee.type !== 'MemberExpression') {
-    this.emit("LITG");
-  }
-
-  // put callee, may evaluate to lvalue
-  this.compileAST(ast.callee);
 
   // do call
   this.emit("CALL");
