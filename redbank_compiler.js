@@ -1100,17 +1100,29 @@ FunctionNode.prototype.compileProgram = function(ast) {
   }
 };
 
-// interface Property <: Node {
-// type: "Property";
-// key: Literal | Identifier;
-// value: Expression;
-// kind: "init" | "get" | "set";
-// }
+
+
+
+/**
+ * Property interface only occurs in 'ObjectExpression' as 'properties'
+ * 
+ * interface Property <: Node {
+ *   type: "Property";
+ *   key: Literal | Identifier;
+ *   value: Expression;
+ *   kind: "init" | "get" | "set";
+ * }
+ * 
+ * @param ast
+ */
+
 FunctionNode.prototype.compileProperty = function(ast) {
 
   if (ast.kind === "get" || ast.kind === "set") {
     throw "not supported yet.";
   }
+  
+  
 
   this.compileAST(ast.key);
   this.compileAST(ast.value);

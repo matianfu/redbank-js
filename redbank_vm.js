@@ -119,11 +119,69 @@ var STACK_SIZE_LIMIT = 65536;
  */
 var ObjectHeap = [];
 
+/**
+ * The host object heap, not used yet
+ */
+var HostHeap = [];
+
+function build_const_dictionary() {
+
+  var p = [];
+  p.push("toString");
+  p.push("valueOf");
+  p.push("Object");
+  p.push("Function");
+  p.push("length");
+  p.push("prototype");
+  p.push("undefined");
+  p.push("null");
+  p.push("boolean");
+  p.push("true");
+  p.push("false");
+  p.push("number");
+  p.push("string");
+
+  return p;
+}
+
+/**
+ * Push an host object into host heap
+ * 
+ * @param x
+ */
+function hostRegister(x) {
+
+  if (HostHeap.indexOf(x) !== -1) {
+    throw "error";
+  }
+
+  HostHeap.push(x);
+}
+
+/**
+ * Remove an host object from host heap
+ * 
+ * @param x
+ */
+function hostUnregister(x) {
+
+  var index = HostHeap.indexOf(x);
+
+  if (index === -1) {
+    throw "error";
+  }
+
+  HostHeap.splice(index, 1);
+}
+
 var STRING_HASH = 0;
 var stringHashObj;
 var PROPERTY_HASH = 0;
 var propertyHashObj;
 
+/**
+ * main stack and error stack TODO
+ */
 var MAIN_STACK = 0;
 var mainStackLength = 0;
 var mainStackObj;
@@ -132,55 +190,6 @@ var ERROR_STACK = 0;
 var errorStackObj;
 
 var MACHINE;
-
-function ecmaIsAccessorDescriptor(desc) {
-  if (desc === undefined) {
-    return false;
-  }
-  if (desc.GET === undefined && desc.SET === undefined) {
-    return false;
-  }
-  return true;
-}
-
-function ecmaIsDataDescriptor(desc) {
-  if (desc === undefined) {
-    return false;
-  }
-  if (desc.VALUE === undefined && desc.WRITABLE === undefined) {
-    return false;
-  }
-  return true;
-}
-
-function ecmaIsGenericDescriptor(desc) {
-  if (desc === undefined) {
-    return false;
-  }
-  if (false === ecmaIsAccessorDescriptor(desc)
-      && false === ecmaIsDataDescriptor(desc)) {
-    return true;
-  }
-  return false;
-}
-
-function ecmaFromPropertyDescriptor(desc) {
-  if (desc === undefined) {
-    return JS_UNDEFINED;
-  }
-
-  throw "not implemented yet";
-}
-
-function ecmaToPropertyDescriptor(obj) {
-
-  throw "not implemented yet";
-}
-
-function ecmaSameValue(x, y) {
-
-  assert(x)
-}
 
 /**
  * Hash function (FNV-1a 32bit)
@@ -248,14 +257,15 @@ function typeOfObject(id) {
   return getObject(id).type;
 }
 
-function classOfObject(id) {
-  return getObject(id).CLASS;
-}
-
 function assert(expr) {
   if (!(expr)) {
     throw "ASSERT FAIL";
   }
+}
+
+function classOfObject(id) {
+  assert(typeOfObject(id) === 'object');
+  return getObject(id).CLASS;
 }
 
 function assertValid(id) {
@@ -264,12 +274,14 @@ function assertValid(id) {
   }
 }
 
+function defined(id) {
+  assertValid(id);
+  return (getObject(id) === undefined) ? false : true;
+}
+
 function assertDefined(id) {
 
-  assertValid(id);
-  if (getObject(id) === undefined) {
-    throw "assert fail, undefined object id";
-  }
+  assert(defined(id));
 }
 
 function assertType(id, type) {
@@ -461,6 +473,169 @@ function set(id, object, member) {
   }
 }
 
+/**
+ * 
+ * @param string
+ * @returns
+ */
+function internFindString(string) {
+
+  assert(typeof string === 'string');
+
+  var StringHash = getObject(STRING_HASH);
+  var hash = HASH(string);
+  hash = hash >>> (32 - STRING_HASHBITS);
+
+  var id = StringHash.elem[hash];
+  if (id === 0) {
+    return 0;
+  }
+
+  // traverse linked list
+  for (; id !== 0; id = getObject(id).nextInSlot) {
+
+    var obj = ObjectHeap[id];
+    if (obj.type !== 'string') {
+      throw "not a string";
+    }
+    if (obj.value === string) {
+      return id;
+    }
+  }
+
+  return 0;
+}
+
+function internFindConstantString(string) {
+
+  assert(typeof string === 'string');
+
+  var id = internFindString(string);
+
+  if (id === 0) {
+    console.log("ERROR: string '" + string + "' is not interned as constant!");
+    throw "error";
+  }
+}
+
+function internNewString(id) {
+
+  var obj = getObject(id);
+
+  var str = obj.value;
+
+  var hash = HASH(str);
+  obj.interned = true;
+  obj.hash = hash;
+
+  hash = hash >>> (32 - STRING_HASHBITS); // drop 20 bits, 12 bit left
+
+  set(stringHashObj.elem[hash], id, 'nextInSlot');
+
+  set(id, STRING_HASH, hash);
+}
+
+function uninternString(id) {
+
+  var obj = getObject(id);
+
+  assert(typeOfObject(id) === STRING_TYPE);
+
+  // assert(obj.type === 'string');
+
+  var hash = obj.hash;
+  hash = hash >>> (32 - STRING_HASHBITS); // shake off 20 bits
+
+  // if (StringHash[hash] === id) {
+  if (stringHashObj.elem[hash] === id) {
+
+    // set(getObject(id).nextInSlot, this.id, 'StringHash', hash);
+    set(getObject(id).nextInSlot, STRING_HASH, hash);
+    return;
+  }
+
+  // for (var curr = StringHash[hash];; curr = getObject(curr).nextInSlot) {
+  for (var curr = stringHashObj.elem[hash];; curr = getObject(curr).nextInSlot) {
+    var next = getObject(curr).nextInSlot;
+    if (next === 0) {
+      throw "not found in StringHash";
+    }
+
+    if (next === id) {
+      var nextnext = getObject(next).nextInSlot;
+      set(nextnext, curr, 'nextInSlot');
+      return;
+    }
+  }
+};
+
+/**
+ * 
+ * @param property
+ */
+function hashProperty(property) {
+
+  var propObj = getObject(property);
+  var parent = propObj.object;
+  var name = propObj.name;
+
+  var nameObj = getObject(name);
+  var nameHash = nameObj.hash;
+
+  var propHash = HASHMORE(nameHash, parent);
+
+  propHash = propHash >>> (32 - PROPERTY_HASHBITS);
+
+  // var x = this.PropertyHash[propHash];
+  var x = propertyHashObj.elem[propHash];
+  if (x === 0) {
+    set(property, PROPERTY_HASH, propHash);
+  }
+  else {
+    set(x, property, 'nextInSlot');
+    set(property, PROPERTY_HASH, propHash);
+  }
+}
+
+/**
+ * This function remove the property out of hash table
+ * 
+ * @param property
+ */
+function unhashProperty(property) {
+
+  var propObj = getObject(property);
+  var parent = propObj.object;
+  var name = propObj.name;
+  // var child = propObj.child;
+
+  var nameObj = getObject(name);
+  var nameHash = nameObj.hash;
+
+  var propHash = HASHMORE(nameHash, parent);
+
+  propHash = propHash >>> (32 - PROPERTY_HASHBITS);
+
+  if (propertyHashObj.elem[propHash] === property) {
+    set(propObj.nextInSlot, PROPERTY_HASH, propHash);
+    return;
+  }
+
+  for (var x = propertyHashObj.elem[propHash];; x = getObject(x).nextInSlot) {
+
+    var next = getObject(x).nextInSlot;
+    if (next === 0) {
+      throw "property not found in property hash";
+    }
+
+    if (next === property) {
+      var nextnext = getObject(next).nextInSlot;
+      set(nextnext, x, 'nextInSlot');
+      return;
+    }
+  }
+}
+
 // TODO should be set in boot strap
 var JS_UNDEFINED = 0;
 var JS_NULL = 0;
@@ -483,12 +658,9 @@ var ARRAY_PROTO = 0;
 var JS_GLOBAL = 0;
 var globalObj;
 
-var ecma;
-
 var typeProto = {};
-
-var propertyProto = Object.create(typeProto);
 var propertyDescriptorProto = Object.create(typeProto);
+var propertyProto = Object.create(typeProto);
 var objectProto = Object.create(typeProto);
 
 var functionProto = Object.create(objectProto);
@@ -496,6 +668,10 @@ var arrayProto = Object.create(objectProto);
 var booleanProto = Object.create(objectProto);
 var numberProto = Object.create(objectProto);
 var stringProto = Object.create(objectProto);
+
+typeProto.IsUndefined = function() {
+  return false;
+};
 
 typeProto.isPrimitive = function() {
   if (this.type === UNDEFINED_TYPE || this.type === NULL_TYPE
@@ -545,27 +721,6 @@ typeProto.toPrimitive = function() {
   }
 
 };
-
-function ecmaGetValue(V) {
-
-  if (V.isEcmaType() !== true) {
-    throw "error";
-  }
-
-  if (V.type !== REFERENCE_TYPE) {
-    return V;
-  }
-
-  var base = V.GetBase();
-
-  if (V.IsUnresolvableReference()) {
-    return -1; // THROW
-  }
-
-  if (V.IsPropertyReference()) {
-
-  }
-}
 
 /**
  * Factory for (indexed) addr object
@@ -671,6 +826,11 @@ function createUndefined() {
   obj.count = Infinity;
   obj.referrer = [];
   obj.tag = 'undefined';
+
+  obj.IsUndefined = function() {
+    return true;
+  };
+
   return register(obj);
 }
 
@@ -716,58 +876,6 @@ function createNumber(value) {
   return register(obj);
 }
 
-/**
- * 
- * @param string
- * @returns
- */
-function internFindString(string) {
-
-  assert(typeof string === 'string');
-
-  var StringHash = getObject(STRING_HASH);
-  var hash = HASH(string);
-  hash = hash >>> (32 - STRING_HASHBITS);
-
-  var id = StringHash.elem[hash];
-  if (id === 0) {
-    return 0;
-  }
-
-  // traverse linked list
-  for (; id !== 0; id = getObject(id).nextInSlot) {
-
-    var obj = ObjectHeap[id];
-    if (obj.type !== 'string') {
-      throw "not a string";
-    }
-    if (obj.value === string) {
-      return id;
-    }
-  }
-
-  return 0;
-}
-
-function internNewString(id) {
-
-  var obj = getObject(id);
-
-  var str = obj.value;
-
-  var hash = HASH(str);
-  obj.interned = true;
-  obj.hash = hash;
-
-  hash = hash >>> (32 - STRING_HASHBITS); // drop 20 bits, 12 bit left
-
-  // set(StringHash[hash], id, 'nextInSlot');
-  set(stringHashObj.elem[hash], id, 'nextInSlot');
-
-  // set(id, this.id, 'StringHash', hash);
-  set(id, STRING_HASH, hash);
-}
-
 function createString(value) {
 
   if (typeof value !== 'string') {
@@ -793,197 +901,55 @@ function createString(value) {
   return id;
 }
 
-function uninternString(id) {
-
-  var obj = getObject(id);
-
-  assert(typeOfObject(id) === STRING_TYPE);
-
-  // assert(obj.type === 'string');
-
-  var hash = obj.hash;
-  hash = hash >>> (32 - STRING_HASHBITS); // shake off 20 bits
-
-  // if (StringHash[hash] === id) {
-  if (stringHashObj.elem[hash] === id) {
-
-    // set(getObject(id).nextInSlot, this.id, 'StringHash', hash);
-    set(getObject(id).nextInSlot, STRING_HASH, hash);
-    return;
-  }
-
-  // for (var curr = StringHash[hash];; curr = getObject(curr).nextInSlot) {
-  for (var curr = stringHashObj.elem[hash];; curr = getObject(curr).nextInSlot) {
-    var next = getObject(curr).nextInSlot;
-    if (next === 0) {
-      throw "not found in StringHash";
-    }
-
-    if (next === id) {
-      var nextnext = getObject(next).nextInSlot;
-      set(nextnext, curr, 'nextInSlot');
-      return;
-    }
-  }
-};
-
-/**
- * 
- * @param property
- */
-function hashProperty(property) {
-
-  var propObj = getObject(property);
-  var parent = propObj.parent;
-  var name = propObj.name;
-
-  var nameObj = getObject(name);
-  var nameHash = nameObj.hash;
-
-  var propHash = HASHMORE(nameHash, parent);
-
-  propHash = propHash >>> (32 - PROPERTY_HASHBITS);
-
-  // var x = this.PropertyHash[propHash];
-  var x = propertyHashObj.elem[propHash];
-  if (x === 0) {
-    set(property, PROPERTY_HASH, propHash);
-  }
-  else {
-    set(x, property, 'nextInSlot');
-    set(property, PROPERTY_HASH, propHash);
-  }
-}
-
-/**
- * This function remove the property out of hash table
- * 
- * @param property
- */
-function unhashProperty(property) {
-
-  var propObj = getObject(property);
-  var parent = propObj.parent;
-  var name = propObj.name;
-  // var child = propObj.child;
-
-  var nameObj = getObject(name);
-  var nameHash = nameObj.hash;
-
-  var propHash = HASHMORE(nameHash, parent);
-
-  propHash = propHash >>> (32 - PROPERTY_HASHBITS);
-
-  if (propertyHashObj.elem[propHash] === property) {
-    set(propObj.nextInSlot, PROPERTY_HASH, propHash);
-    return;
-  }
-
-  for (var x = propertyHashObj.elem[propHash];; x = getObject(x).nextInSlot) {
-
-    var next = getObject(x).nextInSlot;
-    if (next === 0) {
-      throw "property not found in property hash";
-    }
-
-    if (next === property) {
-      var nextnext = getObject(next).nextInSlot;
-      set(nextnext, x, 'nextInSlot');
-      return;
-    }
-  }
-}
-
+// TODO
 propertyProto.isDataProperty = function() {
   return (this.VALUE !== 0) ? true : false;
 };
 
+// TODO
 propertyProto.isAccessorProperty = function() {
   return (this.GET !== 0 || this.SET) ? true : false;
 };
 
 /**
- * using 'new' rather than 'create' as function name prefix to denote that the
- * object should not be referenced on stack or global. It should be a host
- * object, either maintained by host itself or allocated on (host) stack, which
- * is the preferred way.
+ * Create an property object (but not set to object)
+ * 
+ * @param O
+ *          Object (id)
+ * @param P
+ *          Property Name String (id)
+ * @param V
+ *          Value object (id)
+ * @param G
+ *          Getter object (func id)
+ * @param S
+ *          Setter object (func id)
+ * @param W
+ *          Writable, host boolean
+ * @param E
+ *          Enumerable, host boolean
+ * @param C
+ *          Configurable, host boolean
+ * @returns
  */
-function newPropertyDescriptor() {
+function createProperty(O, P, V, G, S, W, E, C) {
 
-  var obj = Object.create();
-  obj.type = PROPERTY_DESCRIPTOR_TYPE;
+  assert(defined(O) && typeOfObject(O) === OBJECT_TYPE);
+  assert(defined(P) && typeOfObject(P) === STRING_TYPE);
+  assert(defined(V));
+  assert(defined(G));
+  assert(defined(S));
+  assert(G === 0 || classOfObject(G) === FUNCTION_CLASS);
+  assert(S === 0 || classOfObject(S) === FUNCTION_CLASS);
+  assert(typeof W === 'boolean');
+  assert(typeof E === 'boolean');
+  assert(typeof C === 'boolean');
 
-  obj.GET = undefined;
-  obj.SET = undefined;
-  obj.VALUE = undefined;
-  obj.WRITABLE = undefined;
-  obj.ENUMERABLE = undefined;
-  obj.CONFIGURABLE = undefined;
-
-  return obj;
-}
-
-propertyDescriptorProto.IsUndefined = function() {
-
-  if (this.GET === undefined && this.SET === undefined
-      && this.VALUE === undefined && this.WRITABLE === undefined
-      && this.ENUMERABLE === undefined && this.CONFIGURABLE === undefined) {
-    return true;
-  }
-  return false;
-};
-
-propertyDescriptorProto.IsAccessorDescriptor = function() {
-  if (this.isUndefined()) {
-    return false;
-  }
-  if (this.GET === 0 && this.SET === 0) {
-    return false;
-  }
-  return true;
-};
-
-propertyDescriptorProto.IsDataDescriptor = function() {
-  if (this.isUndefined()) {
-    return false;
-  }
-  if (this.VALUE === undefined && this.WRITABLE === undefined) {
-    return false;
-  }
-  return true;
-};
-
-propertyDescriptorProto.IsGenericDescriptor = function() {
-  if (this.isUndefined()) {
-    return false;
-  }
-  if (this.isAccessorDescriptor() === false
-      && this.isDataDescriptor() === false) {
-    return true;
-  }
-  return false;
-};
-
-propertyDescriptorProto.FromPropertyDescriptor = function() {
-
-  throw "this method should belong to other types.";
-};
-
-propertyDescriptorProto.ToPropertyDescriptor = function(obj) {
-
-  throw "this method should belong to other types.";
-};
-
-function createProperty(parent, name, value, g, s, w, e, c) {
-
-  assert(parent !== 0 && typeOfObject(parent) === 'object');
-  assert(name !== 0 && typeOfObject(name) === 'string');
-
-  if (value === 0 && g === 0 && s === 0) {
+  if (V === 0 && G === 0 && S === 0) {
     throw "error";
   }
 
-  if (value !== 0 && (g !== 0 || s !== 0)) {
+  if (V !== 0 && (G !== 0 || S !== 0)) {
     throw "error";
   }
 
@@ -993,9 +959,9 @@ function createProperty(parent, name, value, g, s, w, e, c) {
   obj.count = 0;
   obj.referrer = [];
 
-  obj.WRITABLE = (w === true) ? true : false;
-  obj.ENUMERABLE = (e === true) ? true : false;
-  obj.CONFIGURABLE = (c === true) ? true : false;
+  obj.WRITABLE = (W === true) ? true : false;
+  obj.ENUMERABLE = (E === true) ? true : false;
+  obj.CONFIGURABLE = (C === true) ? true : false;
 
   obj.VALUE = 0; // ecma, ref
   obj.GET = 0; // ecma, ref
@@ -1005,20 +971,20 @@ function createProperty(parent, name, value, g, s, w, e, c) {
   obj.nextInObject = 0; // redbank internal, ref
   obj.nextInSlot = 0; // redbank internal, ref
 
-  obj.parent = parent; // redbank internal, non-ref
+  obj.object = O; // redbank internal, non-ref
 
   var id = register(obj);
 
-  if (value !== 0) {
-    set(value, id, 'VALUE');
+  if (V !== 0) {
+    set(V, id, 'VALUE');
   }
-  if (g !== 0) {
-    set(g, id, 'GET');
+  if (G !== 0) {
+    set(G, id, 'GET');
   }
-  if (s !== 0) {
-    set(s, id, 'SET');
+  if (S !== 0) {
+    set(S, id, 'SET');
   }
-  set(name, id, 'name');
+  set(P, id, 'name');
 
   return id;
 }
@@ -1065,16 +1031,16 @@ function getProperty(parent, name) {
   return (id === 0) ? JS_UNDEFINED : id;
 }
 
-function setProperty(value, parent, name, w, e, c) {
+function setProperty(V, O, name, w, e, c) {
 
   var obj;
 
   // for debug
-  if (typeof parent !== 'number' || typeof value !== 'number') {
+  if (typeof O !== 'number' || typeof V !== 'number') {
     throw "Convert object to object id for setProperty";
   }
 
-  obj = ObjectHeap[parent];
+  obj = getObject(O);
 
   /**
    * any string is valid for js property name, including undefined, null, and
@@ -1086,21 +1052,20 @@ function setProperty(value, parent, name, w, e, c) {
     return;
   }
 
-  var prop = searchProperty(parent, name);
+  var prop = searchProperty(O, name);
 
   if (prop === 0) {
-    var id = createProperty(parent, name, value, 0, 0, w, e, c);
+    var id = createProperty(O, name, V, 0, 0, w, e, c);
 
-    set(getObject(parent).property, id, 'nextInObject');
-    set(id, parent, 'property');
-
+    set(getObject(O).property, id, 'nextInObject');
+    set(id, O, 'property');
     hashProperty(id);
   }
   else if (getObject(prop).WRITABLE === false) {
     return;
   }
   else {
-    set(value, prop, 'VALUE');
+    set(V, prop, 'VALUE');
   }
 }
 
@@ -1109,7 +1074,7 @@ function deleteProperty(property) {
   unhashProperty(property);
 
   var propObj = getObject(property);
-  var parent = propObj.parent;
+  var parent = propObj.object;
   var name = propObj.name;
   var value = propObj.VALUE;
 
@@ -1144,27 +1109,203 @@ function setPropertyByLiteral(value, parent, nameLiteral, w, e, c) {
   setProperty(value, parent, name, w, e, c);
 }
 
+/*******************************************************************************
+ * 
+ * PropertyDescriptor is a host object defined for abstract methods
+ * 
+ ******************************************************************************/
+
+/**
+ * using 'new' rather than 'create' as function name prefix to denote that the
+ * object should not be referenced on stack or global. It should be a host
+ * object, either maintained by host itself or allocated on (host) stack, which
+ * is the preferred way.
+ * 
+ * All Object's abstract methods are implemented using this data structure.
+ * 
+ * Logically, this type has six data fields, in which:
+ * 
+ * GET, SET, and VALUE maps to redbank-js value space, that is, 0 for undefined,
+ * positive integer for object heap id.
+ * 
+ * WRITABLE, ENUMERABLE, CONFIGURABLE, are host js boolean values.
+ * 
+ * Another more compact and C-like implementation may combine VALUE field with
+ * GET or SET field, using extra bit/boolean to denote the field's usage. For
+ * example:
+ * 
+ * GET_OR_VALUE, SET
+ * 
+ * data_desc bit, acc_desc bit, w bit, e bit, c bit.
+ * 
+ * where data/acc bits can not be set simultaneously.
+ */
+function newPropertyDescriptor() {
+
+  var obj = Object.create(propertyDescriptorProto);
+  obj.type = PROPERTY_DESCRIPTOR_TYPE;
+
+  obj.GET = 0;
+  obj.SET = 0;
+  obj.VALUE = 0;
+
+  /**
+   * According to spec, writable, enumerable, and configurable fields are
+   * tri-state: undefined, true, or false
+   */
+  return obj;
+}
+
+/** not used yet * */
+function deletePropertyDescriptor(obj) {
+
+  hostUnregister(obj);
+}
+
+/**
+ * 8.10.1 IsAccessorDescriptor ( Desc )
+ * 
+ * @param Desc
+ * @returns {Boolean} host value true or false
+ */
+function isAccessorDescriptor(Desc) {
+
+  if (Desc === undefined) {
+    return false;
+  }
+  if (Desc.GET === JS_UNDEFINED && Desc.SET === JS_UNDEFINED) {
+    return false;
+  }
+  return true;
+}
+
+/**
+ * 8.10.2 IsDataDescriptor ( Desc )
+ * 
+ * @param Desc
+ * @returns {Boolean} host value true or false
+ */
+function isDataDescriptor(Desc) {
+
+  if (Desc === undefined) {
+    return false;
+  }
+  if (Desc.VALUE === JS_UNDEFINED && this.WRITABLE === undefined) {
+    return false;
+  }
+  return true;
+}
+
+/**
+ * 8.10.3 IsGenericDescriptor ( Desc )
+ * 
+ * @param Desc
+ * @returns {Boolean}
+ */
+function isGenericDescriptor(Desc) {
+
+  if (Desc === undefined) {
+    return false;
+  }
+  if (false === isAccessorDescriptor(Desc) && false === isDataDescriptor(Desc)) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * 8.10.4 FromPropertyDescriptor ( Desc )
+ * 
+ * In spec, this function is only used in 15.2.3.3
+ * Object.getOwnPropertyDescriptor ( O, P ), where a native property descriptor
+ * object is created.
+ * 
+ * The Desc must be a fully populated descriptor
+ * 
+ * @param Desc
+ */
+function fromPropertyDescriptor(Desc) {
+
+  if (Desc === undefined) {
+    return undefined;
+  }
+
+  var id = createObjectObject(); // TODO
+  var obj = getObject(id);
+  var descArg, name;
+
+  if (isDataDescriptor(Desc)) {
+
+    name = internFindConstantString("value");
+
+    descArg = newPropertyDescriptor();
+    descArg.VALUE = Desc.VALUE;
+    descArg.WRITABLE = true;
+    descArg.ENUMERABLE = true;
+    descArg.CONFIGURABLE = true;
+
+    obj.DEFINE_OWN_PROPERTY(name, descArg, false);
+
+    name = internFindConstantString("writable");
+    descArg = newPropertyDescriptor();
+    descArg.VALUE = (Desc.WRITABLE === true) ? JS_TRUE : JS_FALSE;
+    descArg.WRITABLE = true;
+    descArg.ENUMERABLE = true;
+    descArg.CONFIGURABLE = true;
+
+    obj.DEFINE_OWN_PROPERTY(name, descArg, false);
+  }
+
+  // not finished yet TODO
+
+  return id;
+}
+
+/**
+ * 8.10.5 ToPropertyDescriptor ( Obj )
+ * 
+ * This function is used only in 15.2.3.6 Object.defineProperty ( O, P,
+ * Attributes ) and 15.2.3.7 Object.defineProperties ( O, Properties ) to
+ * construct native object's properties from native property object.
+ */
+function toPropertyDescriptor() {
+
+  throw "not implemented yet";
+}
+
+/*******************************************************************************
+ * 
+ * Abstract methods for JS Object
+ * 
+ * These methods are the core logic of Javascript Object Model
+ * 
+ ******************************************************************************/
+
 /**
  * 8.12.1 [[GetOwnProperty]] (P)
  * 
- * This function returns PropertyDescriptor, which may be 'IsUndefined()'
+ * P is native string value (id)
+ * 
+ * This function returns undefined or a fully populated PropertyDescriptor,
+ * which is an host object.
  */
-objectProto.GET_OWN_PROPERTY = function(propertyName) {
+objectProto.GET_OWN_PROPERTY = function(P) {
 
-  assert(typeOfObject(propertyName) === STRING_TYPE);
+  assert(typeOfObject(P) === STRING_TYPE);
 
-  // new undefined
-  var D = newPropertyDescriptor();
-
+  // TODO zero or JS_UNDEFINED?
   for (var prop = this.property; prop !== 0; prop = getObject(prop).nextInObject) {
-    if (getObject(prop).name === propertyName) {
+    if (getObject(prop).name === P) {
       break;
     }
   }
 
   if (prop === 0) {
-    return D;
+    return undefined;
   }
+
+  // new undefined
+  var D = newPropertyDescriptor();
 
   var X = getObject(prop);
   if (X.isDataProperty()) {
@@ -1181,7 +1322,7 @@ objectProto.GET_OWN_PROPERTY = function(propertyName) {
 
   D.ENUMERABLE = X.ENUMERABLE;
   D.CONFIGURABLE = X.CONFIGURABLE;
-  return D;
+  return D; // fully populated
 };
 
 /**
@@ -1189,37 +1330,36 @@ objectProto.GET_OWN_PROPERTY = function(propertyName) {
  * 
  * This function recursively find property with given name along prototype
  * chain.
- * 
- * This function returns PropertyDescriptor, which may be 'IsUndefined()'
  */
-objectProto.GET_PROPTERTY = function(propertyName) {
+objectProto.GET_PROPERTY = function(P) {
 
-  var desc = this.GET_OWN_PROPERTY(propertyName);
-  if (desc.IsUndefined()) {
-    return desc;
+  var prop = this.GET_OWN_PROPERTY(P);
+  if (prop !== undefined) {
+    return prop;
   }
 
   var proto = this.PROTOTYPE;
-  if (proto === JS_NULL) { // PROTOTYPE chains use JS_NULL
-    return newPropertyDescriptor();
+  if (proto === JS_NULL) { // PROTOTYPE chains use JS_NULL for nullability, not
+    // undefined
+    return undefined;
   }
-  return proto.GET_PROPERTY(propertyName);
+  return getObject(proto).GET_PROPERTY(P);
 };
 
 /**
  * 8.12.3 [[Get]] (P)
  * 
- * This function returns NATIVE space value. Object (id) or JS_UNDEFINED
+ * return JS_UNDEFINED or object id.
  */
-objectProto.GET = function(propertyName) {
+objectProto.GET = function(P) {
 
-  var desc = this.GET_PROPERTY();
-  if (desc.IsUndefined()) {
+  var desc = this.GET_PROPERTY(P);
+  if (desc === undefined) {
     return JS_UNDEFINED;
   }
 
   if (desc.IsDataDescriptor()) {
-    return desc.VALUE; // TODO? need translation? JS_UNDEFINED?
+    return desc.VALUE;
   }
   assert(desc.IsAccessorDescriptor());
 
@@ -1234,74 +1374,147 @@ objectProto.GET = function(propertyName) {
  * 
  * This function returns true of false, which is the value in host space.
  */
-objectProto.CAN_PUT = function(propertyName) {
+objectProto.CAN_PUT = function(P) {
 
-  var desc = this.GET_OWN_PROPERTY();
-  if (false === desc.IsUndefined()) {
+  var desc = this.GET_OWN_PROPERTY(P);
+
+  /**
+   * for own property
+   */
+  if (desc !== undefined) {
     if (desc.IsAccessorDescriptor()) {
-      return (undefined === desc.SET) ? false : true;
+      // no setter, no put
+      return (desc.SET === JS_UNDEFINED) ? false : true;
     }
     else { // must be data property descriptor
       return desc.WRITABLE;
     }
   }
 
+  /**
+   * for inherited property
+   */
   var proto = this.PROTOTYPE;
   if (proto === JS_NULL) {
+    // for Object.prototype, extensible rules.
     return this.EXTENSIBLE;
   }
 
-  var inherited = proto.GET_PROPERTY(propertyName);
-  if (inherited.IsUndefined()) {
+  var inherited = getObject(proto).GET_PROPERTY(P);
+  if (inherited === undefined) {
+    // if not defined in any ancestor, extensible rules.
     return this.EXTENSIBLE;
   }
 
   if (inherited.IsAccessorDescriptor()) {
-    return (inherited.SET === undefined) ? false : true;
+    // if inherited no setter, no put
+    return (inherited.SET === 0) ? false : true;
   }
 
   assert(inherited.IsDataDescriptor());
 
   if (this.EXTENSIBLE === false) {
+    // if this is not extensible (read only), no way
     return false;
   }
 
+  // if ancestor's property read-only
   return inherited.WRITABLE;
 };
 
 /**
  * 8.12.5 [[Put]] ( P, V, Throw )
+ * 
+ * P - property name string (object id)
+ * V - value (object id)
+ * Throw - true or false, host value space
  */
-objectProto.PUT = function(propertyName, id, Throw) {
+objectProto.PUT = function(P, V, Throw) {
 
+  assert(defined(P) && typeOfObject(P) === STRING_TYPE);
+  
   assert(typeof Throw === 'boolean');
 
-  if (this.CAN_PUT(propertyName) === false) {
+  if (this.CAN_PUT(P) === false) {
     if (Throw) {
       return HOSTTHROW_TYPE_ERROR;
     }
     return;
   }
 
-  var ownDesc = this.GET_OWN_PROPERTY(propertyName);
-  if (ownDesc.IsDataDescriptor()) {
-    // TODO
+  var ownDesc = this.GET_OWN_PROPERTY(P);
+  if (isDataDescriptor(ownDesc) === true) {
+    var valueDesc = newPropertyDescriptor();
+    valueDesc.VALUE = V;
+
+    this.DEFINE_OWN_PROPERTY(P, valueDesc, Throw);
+    return;
+  }
+
+  var desc = this.GET_PROPERTY(P);
+  if (isAccessorDescriptor(desc) === true) {
+    var setter = desc.SET; // this is an ID!
+    getObject(setter).CALL(this.id, V);
+  }
+  else {
+    var newDesc = newPropertyDescriptor();
+    newDesc.VALUE = V;
+    newDesc.WRITABLE = true;
+    newDesc.ENUMERABLE = true;
+    newDesc.CONFIGURABLE = true;
+
+    this.DEFINE_OWN_PROPERTY(P, newDesc, Throw);
   }
 };
 
-objectProto.HAS_PROPERTY = function(propertyName) {
+/**
+ * 8.12.6 [[HasProperty]] (P)
+ */
+objectProto.HAS_PROPERTY = function(P) {
 
+  var desc = this.GET_PROPERTY(P);
+  if (desc === undefined) {
+    return false;
+  }
+
+  return true;
 };
 
-objectProto.DELETE = function(propertyName, opt) {
+/**
+ * 8.12.7 [[Delete]] (P, Throw)
+ */
+objectProto.DELETE = function(P, Throw) {
 
+  var desc = this.GET_OWN_PROPERTY(P);
+
+  if (desc === undefined) {
+    return true;
+  }
+
+  if (desc.CONFIGURABLE === true) {
+    // remove TODO
+    return true;
+  }
+
+  if (Throw) {
+    return HOSTTHROW_TYPE_ERROR;
+  }
+
+  return false;
 };
 
+/**
+ * 8.12.8 [[DefaultValue]] (hint)
+ */
 objectProto.DEFAULT_VALUE = function(hint) {
 
+  var name;
   if (hint === STRING_TYPE) {
-    var toString = this.GET('toString');
-    if (toString && getObject(toString).IS_CALLABLE()) {
+
+    name = internFindConstantString("toString");
+
+    var toString = this.GET(name);
+    if (isCallable(toString) === true) {
       var str = getObject(toString).CALL(this);
       if (str.IsPrimitive()) {
         return str;
@@ -1328,31 +1541,18 @@ objectProto.DEFAULT_VALUE = function(hint) {
  * 
  * This function can throw errors. So the return value is contracted as:
  * 
- * 1. return 1 for true;
- * 2. return 0 for false;
- * 3. return negative value for throw error, such as HOSTTHROW_TYPE_ERROR;
+ * Returns true, false or error
  */
 objectProto.DEFINE_OWN_PROPERTY = function(P, Desc, Throw) {
 
   assert(typeof Throw === 'boolean');
 
-  /**
-   * 1. Let current be the result of calling the [[GetOwnProperty]] internal
-   * method of O with property name P.
-   */
   var current = this.GET_OWN_PROPERTY(P);
-
-  /**
-   * 2. Let extensible be the value of the [[Extensible]] internal property of
-   * O.
-   */
   var extensible = this.EXTENSIBLE;
+  var prop;
 
-  /**
-   * 3. If current is undefined and extensible is false, then Reject.
-   */
-  // no given named property and object is NOT extensible
-  if (current.IsUndefined() && extensible === false) {
+  // no owned property with given name and the object is NOT extensible
+  if (current === undefined && extensible === false) {
     if (Throw) {
       return HOSTTHROW_TYPE_ERROR;
     }
@@ -1363,11 +1563,11 @@ objectProto.DEFINE_OWN_PROPERTY = function(P, Desc, Throw) {
    * 4. If current is undefined and extensible is true, then
    */
   // no given named property but the object is extensible
-  if (current.IsUndefined() && extensible === true) {
+  if (current === undefined && extensible === true) {
     /**
      * a. If IsGenericDescriptor(Desc) or IsDataDescriptor(Desc) is true, then
      */
-    if (Desc.IsGenericDescriptor() || Desc.IsDataDescriptor()) {
+    if (isGenericDescriptor(Desc) || isDataDescriptor(Desc)) {
       /**
        * i. Create an own data property named P of object O whose [[Value]],
        * [[Writable]], [[Enumerable]] and [[Configurable]] attribute values are
@@ -1375,7 +1575,14 @@ objectProto.DEFINE_OWN_PROPERTY = function(P, Desc, Throw) {
        * absent, the attribute of the newly created property is set to its
        * default value.
        */
-      // TODO
+      // TODO assert
+      prop = createProperty(this.id, P, Desc.VALUE, Desc.GET, Desc.SET,
+          Desc.WRITABLE, Desc.ENUMERABLE, Desc.CONFIGURABLE);
+
+      // install
+      set(this.property, prop, 'nextInObject');
+      set(prop, this.id, 'property');
+      hashProperty(prop);
     }
     /**
      * b. Else, Desc must be an accessor Property Descriptor so,
@@ -1388,23 +1595,45 @@ objectProto.DEFINE_OWN_PROPERTY = function(P, Desc, Throw) {
        * absent, the attribute of the newly created property is set to its
        * default value.
        */
-      // TODO
+      assert(Desc.isAccessorDescriptor());
+      // TODO assert
+      createProperty(this.id, P, Desc.VALUE, Desc.GET, Desc.SET, Desc.WRITABLE,
+          Desc.ENUMERABLE, Desc.CONFIGURABLE);
+      
+      // install
+      set(this.property, prop, 'nextInObject');
+      set(prop, this.id, 'property');
+      hashProperty(prop);
     }
     /**
      * C. Return true.
      */
     return true;
   }
+
+  // Now, the owned property with given name exists.
   /**
    * 5. Return true, if every field in Desc is absent.
    */
-  // TODO
+  if (Desc.GET === JS_UNDEFINED && Desc.SET === JS_UNDEFINED
+      && Desc.VALUE === JS_UNDEFINED && Desc.WRITABLE === undefined
+      && Desc.ENUMERABLE === undefined && Desc.CONFIGURABLE === undefined) {
+    return true;
+  }
+
   /**
    * 6. Return true, if every field in Desc also occurs in current and the value
    * of every field in Desc is the same value as the corresponding field in
    * current when compared using the SameValue algorithm (9.12).
    */
-  // TODO
+  // is this simple implementation OK? TODO
+  if (current.VALUE === Desc.VALUE && current.GET === Desc.GET
+      && current.SET === Desc.SET && current.WRITABLE === Desc.WRITABLE
+      && current.ENUMERABLE === Desc.ENUMERABLE
+      && current.CONFIGURABLE === Desc.CONFIGURABLE) {
+    return true;
+  }
+
   /**
    * 7. If the [[Configurable]] field of current is false then
    */
@@ -1412,18 +1641,148 @@ objectProto.DEFINE_OWN_PROPERTY = function(P, Desc, Throw) {
     /**
      * a. Reject, if the [[Configurable]] field of Desc is true.
      */
-    // TODO
+    if (Desc.CONFIGURABLE === true) {
+      if (Throw) {
+        return HOSTTHROW_TYPE_ERROR;
+      }
+      return false;
+    }
     /**
      * b. Reject, if the [[Enumerable]] field of Desc is present and the
      * [[Enumerable]] fields of current and Desc are the Boolean negation of
      * each other.
      */
-    // TODO
+    if (Desc.ENUMERABLE !== undefined && Desc.ENUMERABLE !== current.ENUMERABLE) {
+      if (Throw) {
+        return HOSTTHROW_TYPE_ERROR;
+      }
+      return false;
+    }
+  }
+
+  /**
+   * 8. If IsGenericDescriptor(Desc) is true, then no further validation is
+   * required.
+   */
+  if (isGenericDescriptor(Desc)) {
+
   }
   /**
-   * 8. If IsGenericDescriptor(Desc) is true, then no further validation is required.
+   * 9. Else, if IsDataDescriptor(current) and IsDataDescriptor(Desc) have
+   * different results, then
+   */
+  else if (isDataDescriptor(current) !== isDataDescriptor(Desc)) {
+    /**
+     * a. Reject, if the [[Configurable]] field of current is false.
+     */
+    if (current.CONFIGURABLE === false) {
+      if (Throw) {
+        return HOSTTHROW_TYPE_ERROR;
+      }
+      return false;
+    }
+    /**
+     * b. If IsDataDescriptor(current) is true, then
+     */
+    if (isDataDescriptor(current) === true) {
+      /**
+       * i. Convert the property named P of object O from a data property to an
+       * accessor property. Preserve the existing values of the converted
+       * property’s [[Configurable]] and [[Enumerable]] attributes and set the
+       * rest of the property’s attributes to their default values.
+       */
+      // TODO Convert data property to accessor property !!!
+    }
+
+    /**
+     * c. Else,
+     */
+    else {
+      /**
+       * Convert the property named P of object O from an accessor property to a
+       * data property. Preserve the existing values of the converted property’s
+       * [[Configurable]] and [[Enumerable]] attributes and set the rest of the
+       * property’s attributes to their default values.
+       */
+      // TODO Convert accessor property to data property !!!
+    }
+  }
+  /**
+   * 10. Else, if IsDataDescriptor(current) and IsDataDescriptor(Desc) are both
+   * true, then
+   */
+  else if (isDataDescriptor(current) === true
+      && isDataDescriptor(Desc) === true) {
+    /**
+     * a. If the [[Configurable]] field of current is false, then
+     */
+    if (current.CONFIGURABLE === false) {
+      /**
+       * i. Reject, if the [[Writable]] field of current is false and the
+       * [[Writable]] field of Desc is true.
+       */
+      if (current.WRITABLE === false && Desc.WRITABLE === true) {
+        return (Throw) ? HOSTTHROW_TYPE_ERROR : false;
+      }
+      /**
+       * ii. If the [[Writable]] field of current is false, then
+       */
+      if (current.WRITABLE === false) {
+        /**
+         * 1. Reject, if the [[Value]] field of Desc is present and
+         * SameValue(Desc.[[Value]], current.[[Value]]) is false.
+         */
+        // TODO SAME VALUE!
+        if (Desc.VALUE !== undefined) {
+          return (Throw) ? HOSTTHROW_TYPE_ERROR : false;
+        }
+      }
+    }
+    /**
+     * b. else, the [[Configurable]] field of current is true, so any change is
+     * acceptable.
+     */
+    // this seems to be a pure comment.
+  }
+  /**
+   * 11. Else, IsAccessorDescriptor(current) and IsAccessorDescriptor(Desc) are
+   * both true so,
+   */
+  else if (current.IsAccessorDescriptor() === true
+      && Desc.IsAccessorDescriptor() === true) {
+    /**
+     * a. If the [[Configurable]] field of current is false, then
+     */
+    if (current.CONFIGURABLE === false) {
+      /**
+       * i. Reject, if the [[Set]] field of Desc is present and
+       * SameValue(Desc.[[Set]], current.[[Set]]) is false.
+       */
+      if (Desc.SET && Desc.SET !== current.SET) {
+        return (Throw) ? HOSTTHROW_TYPE_ERROR : false;
+      }
+
+      /**
+       * ii. Reject, if the [[Get]] field of Desc is present and
+       * SameValue(Desc.[[Get]], current.[[Get]]) is false.
+       */
+      if (Desc.GET && Desc.GET !== current.GET) {
+        return (Throw) ? HOSTTHROW_TYPE_ERROR : false;
+      }
+    }
+  }
+
+  /**
+   * 12. For each attribute field of Desc that is present, set the
+   * correspondingly named attribute of the property named P of object O to the
+   * value of the field.
    */
   
+
+  /**
+   * 13. Return true
+   */
+  return true;
 };
 
 functionProto.CONSTRUCT = function() {
@@ -1715,13 +2074,13 @@ function bootstrap() {
   wrapper = function() {
     // var newObj;
     //
-    // if (this.parent === vm.OBJECT) { // TODO
+    // if (this.object === vm.object) { // TODO
     // throw "new is not supported yet";
     // // Called with new.
     // newObj = this;
     // }
     // else {
-    // newObj = vm.createObject(vm.OBJECT_PROTO);
+    // newObj = vm.createObject(vm.object_PROTO);
     // }
     return createObject(OBJECT_PROTO);
   };
@@ -1760,7 +2119,7 @@ function bootstrap() {
     // Interestingly, the scope for constructed functions is the global scope,
     // even if they were constructed in some other scope. TODO what does this
     // mean?
-    // newFunc.parentScope =
+    // newFunc.objectScope =
     // vm.stateStack[vm.stateStack.length - 1].scope;
     // var ast = esprima.parse('$ = function(' + args + ') {' + code + '};');
     // newFunc.node = ast.body[0].expression.right;
@@ -2048,7 +2407,7 @@ RedbankVM.prototype.indexOfARGC = function() {
   return index;
 };
 
-RedbankVM.prototype.indexOfPARAM0 = function() {
+RedbankVM.prototype.indexOfPARAM = function(index) {
 
 };
 
@@ -2371,8 +2730,7 @@ RedbankVM.prototype.storeOrAssignToAddress = function(mode) {
     }
   }
   else if (addrObj.addrType === ADDR_LEXICAL) {
-    // get function object id
-    // var func = mainStackObj.elem[this.FP - 1];
+
     var funcObj = this.FUNC_OBJ();
     var lex = funcObj.lexicals;
     var lexObj = getObject(lex);
@@ -2399,6 +2757,20 @@ RedbankVM.prototype.storeOrAssignToAddress = function(mode) {
   }
 };
 
+RedbankVM.prototype.storeProperty = function() {
+  
+  assertEcmaLangType(this.TOS());
+  assertType(this.NOS(), STRING_TYPE);
+  assertEcmaLangObject(this.ThirdOS());
+
+  // setProperty(this.TOS(), this.ThirdOS(), this.NOS(), true, true, true);
+  var O = getObject(this.ThirdOS());
+  var P = this.NOS();
+  var V = this.TOS();
+
+  O.PUT(P, V, false); // TODO how to determine throw?
+};
+
 /**
  * Store or Assign to object/property
  * 
@@ -2406,20 +2778,15 @@ RedbankVM.prototype.storeOrAssignToAddress = function(mode) {
  * @param mode
  */
 RedbankVM.prototype.storeOrAssignToObject = function(mode) {
-
-  assertEcmaLangType(this.TOS());
-  assertType(this.NOS(), STRING_TYPE);
-  assertEcmaLangObject(this.ThirdOS());
-
-  setProperty(this.TOS(), this.ThirdOS(), this.NOS(), true, true, true);
-
-  if (mode === 'store') {
+  
+  this.storeProperty();
+  
+  if (mode === 'store') { // O, P, V -- 
     this.pop();
     this.pop();
     this.pop();
   }
-  else if (mode === 'assign') {
-    // set(this.TOS(), this.id, 'Stack', this.indexOfThirdOS());
+  else if (mode === 'assign') { // O, P, V -- V
     set(this.TOS(), MAIN_STACK, this.indexOfThirdOS());
     this.pop();
     this.pop();
@@ -2903,7 +3270,6 @@ RedbankVM.prototype.step = function(code, bytecode) {
     else {
       throw "not supported yet";
     }
-
     break;
 
   case "LITC":
@@ -2919,7 +3285,6 @@ RedbankVM.prototype.step = function(code, bytecode) {
     else {
       throw "error";
     }
-    // id = this.createPrimitive(val);
     this.push(id);
     break;
 
@@ -2988,12 +3353,8 @@ RedbankVM.prototype.step = function(code, bytecode) {
     }
     break;
 
-  case "STOREP": // object key value -- object
-
-    assertEcmaLangType(this.TOS());
-    assertType(this.NOS(), STRING_TYPE);
-    assertEcmaLangObject(this.ThirdOS());
-    setProperty(this.TOS(), this.ThirdOS(), this.NOS(), true, true, true);
+  case "STOREP":  // O, P, V -- O
+    this.storeProperty();
     this.pop();
     this.pop();
     break;
