@@ -6,6 +6,7 @@
 
 var Esprima_Main = require("esprima");
 var readline = require("readline");
+var fs = require("fs");
 
 var JSInterpreter = require("./interpreter.js");
 var ESCodegen_Main = require("escodegen");
@@ -13,6 +14,8 @@ var Compiler = require("./redbank_compiler.js");
 var RedbankVM = require("./redbank_vm.js");
 var Common = require("./common.js");
 
+var TEST262_PATH = "/home/ma/redbank/test262/test/";
+var LANGUAGE_TYPES_BOOLEAN = TEST262_PATH + "language/types/boolean/";
 /**
  * constants
  */
@@ -113,6 +116,14 @@ function run_case(testcase, opt_logast, opt_logsrc) {
   console.log(Common.Format.blank);
   console.log(Common.Format.blank);
   console.log(Common.Format.blank);
+}
+
+function run_script(source) {
+  
+  var ast = Esprima_Main.parse(source);
+  var bytecodes = Compiler.compile(ast);
+  var vm = new RedbankVM();
+  vm.run(bytecodes);
 }
 
 /**
@@ -677,7 +688,9 @@ var testcase_internal = {
     source : 'var a = {}; var b = {}; a.x = b; b.y = a;'
   },
 
-
+  strict_function : {
+    source : 'var a = function(){"use strict";}'
+  },
 
   new_object : {
     init : Common.InitMode.FULL,
@@ -691,7 +704,7 @@ var testcase_internal = {
   empty_array : {
     source : 'var a = [];'
   },
-  
+
   try_catch : {
     source : 'var a; try { throw "error" } catch (e) { a = e; }'
   }
@@ -710,7 +723,7 @@ var testcase_future = {
 };
 
 var testcase_exception = {
-    
+
 };
 
 var TESTS = {
@@ -807,8 +820,38 @@ function emit_as_tcp_client(testcase) {
   });
 }
 
+function run_test262() {
+  
+  console.log("Dir path : " + LANGUAGE_TYPES_BOOLEAN);
+
+  var dir = LANGUAGE_TYPES_BOOLEAN;
+
+  fs.readdir(dir, function(err, files) {
+    
+    function readFileCallback(err, data) {
+      if (err) {
+        throw err;
+      }
+
+      var source = data.toString();
+      console.log(source);
+      run_script(source);
+    }
+
+    for (var i = 0; i < files.length; i++) {
+      
+      console.log(files[i]);
+
+      var fpath = dir + files[i];
+      fs.readFile(fpath, readFileCallback);
+    }
+  });
+}
+
 run_testsuite(TESTS);
-// run_single_in_suite(TESTS, "global", "object_proto_dummy");
+// run_single_in_suite(TESTS, "internal", "strict_function");
+
+
 
 // emit_as_tcp_client(TESTS["basic"]["var_declare_dual"]);
 
