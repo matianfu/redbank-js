@@ -714,15 +714,15 @@ typeProto.isEcmaLangType = function() {
 };
 
 typeProto.isEdmaSpecType = function() {
-  if (this.type === REFERENCE_TYPE
-      || this.type === LIST_TYPE || this.type === COMPLETION_TYPE
+  if (this.type === REFERENCE_TYPE || this.type === LIST_TYPE
+      || this.type === COMPLETION_TYPE
       || this.type === PROPERTY_DESCRIPTOR_TYPE
       || this.type === PROPERTY_IDENTIFIER_TYPE
       || this.type === LEXICAL_ENVIRONMENT_TYPE
       || this.type === ENVIRONMENT_RECORD_TYPE) {
     return true;
   }
-  
+
   return false;
 };
 
@@ -735,8 +735,6 @@ typeProto.isEcmaType = function() {
   }
   return false;
 };
-
-
 
 /*******************************************************************************
  * 
@@ -865,31 +863,6 @@ var CHAPTER_08_07_THE_REFERENCE_SPECIFICATION_TYPE;
 
 var referenceProto = Object.create(typeProto);
 
-function newReferenceType(base, name, strict) {
-
-  assertDefined(base);
-
-  /**
-   * environment record type is not implemented
-   */
-  var baseType = typeOfObject(base);
-  assert(baseType === UNDEFINED_TYPE || baseType === OBJECT_TYPE
-      || baseType === BOOLEAN_TYPE || baseType === STRING_TYPE
-      || baseType === NUMBER_TYPE);
-
-  assert(typeOfObject(name) === STRING_TYPE);
-
-  var obj = Object.create(referenceProto);
-
-  obj.type = REFERENCE_TYPE;
-
-  obj.base = base;
-  obj.name = name;
-  obj.strict = strict;
-
-  return obj;
-}
-
 referenceProto.GetBase = function() {
   return this.base;
 };
@@ -926,40 +899,86 @@ referenceProto.IsUnresolvableReference = function() {
   return (this.base === JS_UNDEFINED) ? true : false;
 };
 
+function newReferenceType(base, name, strict) {
+
+  assertDefined(base);
+
+  /**
+   * environment record type is not implemented
+   */
+  var baseType = typeOfObject(base);
+  assert(baseType === UNDEFINED_TYPE || baseType === OBJECT_TYPE
+      || baseType === BOOLEAN_TYPE || baseType === STRING_TYPE
+      || baseType === NUMBER_TYPE);
+
+  assert(typeOfObject(name) === STRING_TYPE);
+
+  var obj = Object.create(referenceProto);
+
+  obj.type = REFERENCE_TYPE;
+
+  obj.base = base;
+  obj.name = name;
+  obj.strict = strict;
+
+  return obj;
+}
 
 var CHAPTER_08_07_01;
+
 /**
  * 8.7.1 GetValue (V)
+ * 
+ * This abstract method retrieves ecma lang type from reference type.
+ * 
+ * This is a stack function. V is supposed to be TOS and replaced by result.
+ * 
+ * FORTH NOTATION: V -- result
+ * 
  */
-function GetValue(V) {
-  
+function GetValue() {
+
   var id = MACHINE.TOS();
   var obj = getObject(id);
-  
+
   if (typeOfObject(id) !== REFERENCE_TYPE) {
     return ERR_NONE;
   }
 
-  var base = V.GetBase();
+  var base = obj.GetBase();
+  var P = obj.GetReferencedName();
 
   if (obj.IsUnresolvableReference() === true) {
     return ERR_REFERENCE_ERROR;
   }
 
   if (obj.IsPropertyReference()) {
-    
+
     var get;
     if (obj.HasPrimitiveBase() === false) {
       get = obj.GET;
     }
     else {
-      get = function () {
+      get = function() {
         
-      }
+        // ref-type -- base
+        set(base, MAIN_STACK, MACHINE.indexOfTOS());
+        
+        // base -- object (with primitive value)
+        toObject();
+        
+        var desc = getObject(MACHINE.TOS()).GET_PROPERTY(P);
+        if (desc === undefined ) { // refactor TODO
+          set(JS_UNDEFINED, MAIN_STACK, MACHINE.indexOfTOS());
+        } 
+        
+      };
     }
     
-    
+    get(base, P);
   }
+  
+  throw "error";
 
   // no else, environment record not implemented.
 }
@@ -967,7 +986,7 @@ function GetValue(V) {
 var CH08_07_02_PUT_VALUE;
 
 function PutValue(V, W) {
-  
+
 }
 
 /**
@@ -2035,23 +2054,127 @@ functionProto.HAS_INSTANCE = function() {
 
 };
 
-
-/******************************************************************************
+/*******************************************************************************
  * 
  * Chapter 9
  * 
  ******************************************************************************/
-typeProto.toPrimitive = function() {
+var CH_09_01;
 
-  if (!(this.isEcmaLangType())) {
-    throw "error";
+// input -- primitive
+function ToPrimitive(preferredType) {
+
+  var input = MACHINE.TOS();
+  var obj = getObject(input);
+
+  assert(obj.isEcmaLangType());
+
+  if (obj.isPrimitive()) {
+    return ERR_NONE;
   }
-};
 
+  return obj.DEFAULT_VALUE(preferredType);
+}
 
-var CHAPTER_09_10;
+var CH_09_02;
 
-typeProto.checkObjectCoercible = function() {
+function ToBoolean() {
+
+  var input = MACHINE.TOS();
+  var obj = getObject(input);
+
+  assert(obj.isEcmaLangType());
+
+  if (input === JS_UNDEFINED || input === JS_NULL) {
+    set(JS_FALSE, MAIN_STACK, MACHINE.indexOfTOS());
+  }
+  else if (typeOfObject(input) === NUMBER_TYPE) {
+    if (input === JS_POSITIVE_ZERO || input === JS_NEGATIVE_ZERO
+        || input === JS_NAN) {
+      set(JS_FALSE, MAIN_STACK, MACHINE.indexOfTOS());
+    }
+    set(JS_TRUE, MAIN_STACK, MACHINE.indexOfTOS());
+  }
+  else if (typeOfObject(input) === STRING_TYPE) {
+    set(JS_TRUE, MAIN_STACK, MACHINE.indexOfTOS());
+    // TODO empty string return false
+  }
+  else if (typeOfObject(input) === OBJECT_TYPE) {
+    set(JS_TRUE, MAIN_STACK, MACHINE.indexOfTOS());
+  }
+}
+
+var CH_09_03;
+
+function ToNumber() {
+
+}
+
+var CH_09_04;
+
+function ToInteger() {
+
+}
+
+var CH_09_08;
+
+/**
+ * 9.8 ToString()
+ * 
+ * This is a stack function.
+ */
+function ToString() {
+  
+  var id = MACHINE.TOS();
+  var obj = getObject(id);
+  var type = typeOfObject(id);
+  var str;
+  
+  if (type === UNDEFINED_TYPE) {
+    str = internFindConstantString("undefined");
+    
+  }
+}
+
+var CH_09_09;
+
+/**
+ * 9.9 ToObject
+ * 
+ * This is a stack function. It replaces the TOS with result.
+ * 
+ */
+function ToObject() {
+  
+  var type = typeOfObject(MACHINE.TOS());
+  if (type === UNDEFINED_TYPE || type === NULL_TYPE) {
+    return ERR_TYPE_ERROR;
+  }
+  
+  if (type === BOOLEAN_TYPE) {
+    // TODO
+  }
+  else if (type === NUMBER_TYPE) {
+    // TODO
+  }
+  else if (type === STRING_TYPE) {
+    // TODO
+  }
+  else { // must be object type
+    // do nothing
+  }
+  return ERR_NONE;
+}
+
+var CH_09_10;
+
+/**
+ * 9.10 CheckObjectCoercible
+ * 
+ * This function test if given object coercible. Since this function does NOT 
+ * create anything, it is not necessarily to be a stack function.
+ */
+function CheckObjectCoercible(id) {
 
   var obj = getObject(id);
   assert(obj.isEcmaLangType() === true);
@@ -2059,19 +2182,80 @@ typeProto.checkObjectCoercible = function() {
   if (typeOfObject(id) === UNDEFINED_TYPE || typeOfObject(id) === NULL_TYPE) {
     return ERR_TYPE_ERROR;
   }
-  
+
   return ERR_NONE;
-};
+}
 
-var CHAPTER_09_11;
+var CH_09_11;
 
-function isCallable(id) {
+/**
+ * This function test if given ecma lang type is callable
+ * @param id
+ * @returns host value true or false
+ */
+function IsCallable(id) {
 
   var obj = getObject(id);
   assert(obj.isEcmaLangType() === true);
 
   // TODO verify
   return (obj.isObject() && obj.CALL !== undefined) ? true : false;
+}
+
+var CH_09_12;
+
+/**
+ * 9.12 The SameValue Algorithm
+ * @param x
+ * @param y
+ */
+function SameValue(x, y) {
+  
+  assert(getObject(x).isEcmaLangType());
+  assert(getObject(y).isEcmaLangType());
+  
+  var typeX = typeOfObject(x);
+  var typeY = typeOfObject(y);
+  
+  if (typeX !== typeY) {
+    return false;
+  }
+  
+  if (typeX === UNDEFINED_TYPE || typeX === NULL_TYPE) {
+    return true;
+  }
+  
+  if (typeX === NUMBER_TYPE) {
+    // TODO may be problematic
+    if (x === JS_NAN && y === JS_NAN) {
+      return true;
+    }
+    
+    if (x === JS_POSITIVE_ZERO && y === JS_NEGATIVE_ZERO) {
+      return false;
+    }
+    
+    if (x === JS_NEGATIVE_ZERO && y === JS_POSITIVE_ZERO) {
+      return false;
+    }
+    
+    if (getObject(x).value === getObject(y).value) {
+      return true;
+    }
+    
+    return false;
+  }
+  
+  if (typeX === STRING_TYPE) {
+    // TODO
+    return (getObject(x).value === getObject(y).value);
+  }
+  
+  if (typeX === BOOLEAN_TYPE) {
+    return (x === y);
+  }
+  
+  return (x === y);
 }
 
 function createObject(proto) {
@@ -2443,6 +2627,8 @@ function toBoolean(Input) {
   }
 }
 
+var CH_11_09_03;
+
 /**
  * ecma262 11.9.3
  */
@@ -2538,6 +2724,7 @@ function abstractEqualityComparison(x, y) {
   return (getObject(x).value == getObject(y).value) ? true : false;
 };
 
+var CH_11_09_06;
 /**
  * ecma262, 11.9.6
  */
@@ -2825,6 +3012,16 @@ RedbankVM.prototype.pop = function() {
   set(0, MAIN_STACK, this.indexOfTOS());
   mainStackLength--;
 };
+
+RedbankVM.prototype.subst = function(id, index) {
+  
+  set(id, MAIN_STACK, index);
+};
+
+RedbankVM.prototype.substTop = function(id) {
+  
+  set(id, MAIN_STACK, this.indexOfTOS());
+}
 
 RedbankVM.prototype.fetcha = function() {
 
