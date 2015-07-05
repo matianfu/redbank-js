@@ -626,6 +626,9 @@ var testcase_object = {
       vm.assertStackSlotNumberValue(0, 254);
     }
   },
+//  object_expr_getter : {
+//    source : 'var a; var b = { x: 123, get xplus() { return this.x + 1; } };'
+//  }
 };
 
 var testcase_jsthis = {

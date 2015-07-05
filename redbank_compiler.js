@@ -811,10 +811,10 @@ FunctionNode.prototype.compileCallExpression = function(ast) {
     this.emit("LITN", 1);
     return;
   }
-  
+
   // put callee, may evaluate to lvalue TODO
   this.compileAST(ast.callee);
-  
+
   // put this as global
   if (ast.callee.type !== 'MemberExpression') {
     this.emit("LITG");
@@ -963,9 +963,9 @@ FunctionNode.prototype.compileIdentifier = function(ast) {
 
     if (x.__parent__.type === 'CatchClause') {
       if (ast.name === x.__parent__.param.name) {
-        
+
         this.emit('LITA', 'CATCH', depth);
-        
+
         if (exprAsVal(ast)) {
           this.emit('FETCHA');
         }
@@ -1100,9 +1100,6 @@ FunctionNode.prototype.compileProgram = function(ast) {
   }
 };
 
-
-
-
 /**
  * Property interface only occurs in 'ObjectExpression' as 'properties'
  * 
@@ -1115,18 +1112,23 @@ FunctionNode.prototype.compileProgram = function(ast) {
  * 
  * @param ast
  */
-
 FunctionNode.prototype.compileProperty = function(ast) {
 
-  if (ast.kind === "get" || ast.kind === "set") {
-    throw "not supported yet.";
+  if (ast.kind === "init") {
+    this.compileAST(ast.key);
+    this.compileAST(ast.value);
+    this.emit("STOREP");
   }
-  
-  
-
-  this.compileAST(ast.key);
-  this.compileAST(ast.value);
-  this.emit("STOREP");
+  else if (ast.kind === 'get') {
+    // this.compileAST(ast.key);
+    throw "unknown kind";
+  }
+  else if (ast.kind === 'set') {
+    throw "unknown kind";
+  }
+  else {
+    throw "unknown kind";
+  }
 };
 
 // interface ReturnStatement <: Statement {

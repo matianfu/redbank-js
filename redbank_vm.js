@@ -456,6 +456,11 @@ function decr(id, object, member) {
         decr(obj.elem[v], id, v);
       }
       break;
+      
+    case 'reference':
+      decr(obj.base, id, 'base');
+      decr(obj.name, id, 'name');
+      break;
 
     default:
       throw "not implemented.";
@@ -847,6 +852,25 @@ function createNumber(value) {
  */
 var CH_08_06_THE_OBJECT_TYPE;
 
+function createObject(proto) {
+
+  if (typeof proto === 'number') {
+    throw "Use some prototype object as parameter";
+  }
+
+  var obj = Object.create(proto);
+
+  obj.type = OBJECT_TYPE;
+  obj.count = 0;
+  obj.referrer = [];
+  obj.property = 0; // referencing
+  obj.PROTOTYPE = 0; // referencing
+
+  var id = register(obj);
+
+  return id;
+}
+
 /**
  * 8.7 The Reference Specification Type
  */
@@ -890,7 +914,14 @@ referenceProto.IsUnresolvableReference = function() {
   return (this.base === JS_UNDEFINED) ? true : false;
 };
 
-function newReferenceType(base, name, strict) {
+/**
+ * 
+ * @param base
+ * @param name
+ * @param strict
+ * @returns {Number}
+ */
+function createReferenceType(base, name, strict) {
 
   assertDefined(base);
 
@@ -907,12 +938,18 @@ function newReferenceType(base, name, strict) {
   var obj = Object.create(referenceProto);
 
   obj.type = REFERENCE_TYPE;
+  obj.count = 0;
+  obj.referrer = [];
 
-  obj.base = base;
-  obj.name = name;
+  obj.base = 0;    // ref
+  obj.name = 0;    // ref
   obj.strict = strict;
-
-  return obj;
+  
+  var id = register(obj);
+  
+  set(base, id, 'base');
+  set(name, id, 'name');
+  return id;
 }
 
 var CH_08_07_01_GET_VALUE;
@@ -950,8 +987,14 @@ function GetValue() {
 
   if (R.IsPropertyReference()) {
     if (R.HasPrimitiveBase() === false) {
-      // call the object's get and return
-      return OBJECT_GET();
+      // R -- R V
+      E = OBJECT_GET(O, P);
+      if (E < 0) {
+        return E;
+      }
+      
+      MACHINE.nip();
+      return ERR_NONE;
     }
     else {
       // R -- R O (Primitive Value)
@@ -1008,7 +1051,6 @@ function GetValue() {
   }
 
   throw "error";
-
   // no else, environment record not implemented.
 }
 
@@ -1076,7 +1118,7 @@ var CH_08_10_1;
 function IsAccessorDescriptor(Desc) {
 
   assert(Desc.type === PROPERTY_DESCRIPTOR_TYPE);
-  
+
   if (Desc === undefined) {
     return false;
   }
@@ -1086,6 +1128,8 @@ function IsAccessorDescriptor(Desc) {
   return true;
 }
 
+var CH_08_10_2;
+
 /**
  * 8.10.2 IsDataDescriptor ( Desc )
  * 
@@ -1093,7 +1137,7 @@ function IsAccessorDescriptor(Desc) {
  * @returns {Boolean} host value true or false
  */
 function IsDataDescriptor(Desc) {
-  
+
   assert(Desc.type === PROPERTY_DESCRIPTOR_TYPE);
 
   if (Desc === undefined) {
@@ -1105,6 +1149,8 @@ function IsDataDescriptor(Desc) {
   return true;
 }
 
+var CH_08_10_3;
+
 /**
  * 8.10.3 IsGenericDescriptor ( Desc )
  * 
@@ -1114,7 +1160,7 @@ function IsDataDescriptor(Desc) {
 function IsGenericDescriptor(Desc) {
 
   assert(Desc.type === PROPERTY_DESCRIPTOR_TYPE);
-  
+
   if (Desc === undefined) {
     return false;
   }
@@ -1145,7 +1191,7 @@ function fromPropertyDescriptor(Desc) {
   var obj = getObject(id);
   var descArg, name;
 
-  if (isDataDescriptor(Desc)) {
+  if (IsDataDescriptor(Desc)) {
 
     name = internFindConstantString("value");
 
@@ -1283,7 +1329,7 @@ function createTrap(catchLabel, finalLabel, stackLength) {
 }
 
 function IsDataProperty(prop) {
-  
+
   if (prop === 0) {
     return false;
   }
@@ -1300,7 +1346,7 @@ propertyProto.isDataProperty = function() {
 };
 
 function IsAccessorProperty(prop) {
-  
+
   if (prop === 0) {
     return false;
   }
@@ -1580,64 +1626,35 @@ var CH_08_12_03;
 /**
  * 8.12.3 [[Get]] (P)
  * 
- * This is a stack function.
- * 
- * FORTH: P -- V
- * 
- * @returns error
- */
-objectProto.GET = function() {
-
-  var P = MACHINE.TOS();
-  var desc = this.GET_PROPERTY(P);
-  if (desc === undefined) {
-    MACHINE.setTop(JS_UNDEFINED);
-  }
-  else if (desc.IsDataDescriptor()) {
-    MACHINE.setTop(desc.VALUE);
-  }
-  else if (desc.GET === 0) {
-    MACHINE.setTop(JS_UNDEFINED);
-  }
-  else {
-    MACHINE.pop(); // remove P
-    return getObject(desc.GET).CALL(this.id);
-  }
-
-  return ERR_NONE;
-};
-
-/**
- * 8.12.3 [[Get]] (P)
- * 
  * This is a modified version of ecma specification.
  * 
- * This is a stack function.
+ * This is a stack function. -- V
  * 
- * RefType -- V
+ * Consider this function as creating a new value. Don't use R -- V as
+ * definition, it is the job of GetValue. If GET is defined as R -- V, then in
+ * caller, it is hard to decide the strict parameter.
  */
-function OBJECT_GET() {
-
-  var R = MACHINE.TOS();
-
-  assert(IsReferenceType(R));
-
-  var O = R.base;
-  var P = R.name;
+function OBJECT_GET(O, P) {
 
   var prop = OBJECT_GET_PROPERTY(O, P);
   if (prop === 0) {
-    MACHINE.setTop(JS_UNDEFINED);
+    MACHINE.push(JS_UNDEFINED);
   }
   else if (IsDataProperty(prop)) {
-    MACHINE.setTop(getObject(prop).VALUE);
+    MACHINE.push(getObject(prop).VALUE);
   }
   else if (getObject(prop).GETTER === 0) {
-    MACHINE.setTop(JS_UNDEFINED);
+    MACHINE.push(JS_UNDEFINED);
   }
   else {
-    MACHINE.setTop(getObject(prop).GETTER);
-    return FUNCTION_CALL(O);
+    // -- F
+    MACHINE.push(getObject(prop).GETTER);
+
+    // F -- RET as V
+    var E = FUNCTION_CALL(O);
+    if (E) {
+      return E;
+    }
   }
 
   return ERR_NONE;
@@ -1690,6 +1707,8 @@ var CH_08_12_05;
 /**
  * 8.12.5 [[Put]] ( P, V, Throw )
  * 
+ * This is a stack function.
+ * 
  * P - property name string (object id) V - value (object id) Throw - true or
  * false, host value space
  */
@@ -1703,7 +1722,7 @@ function OBJECT_PUT(O, P, V, Throw) {
   }
 
   var prop = OBJECT_GET_OWN_PROPERTY(O, P);
-  if (prop !== 0 && IsDataProperty(prop)) {
+  if (IsDataProperty(prop) === true) {
     var valueDesc = newPropertyDescriptor();
     valueDesc.VALUE = V;
 
@@ -1711,7 +1730,7 @@ function OBJECT_PUT(O, P, V, Throw) {
   }
 
   prop = OBJECT_GET_PROPERTY(O, P);
-  if (prop !== 0 && IsAccessorProperty(prop) === true) {
+  if (IsAccessorProperty(prop) === true) {
     var setter = getObject(prop).SETTER;
     MACHINE.push(setter);
     FUNCTION_CALL(O, V);
@@ -1723,8 +1742,10 @@ function OBJECT_PUT(O, P, V, Throw) {
     newDesc.ENUMERABLE = true;
     newDesc.CONFIGURABLE = true;
 
-    OBJECT_DEFINE_OWN_PROPERTY(O, P, newDesc, Throw);
+    return OBJECT_DEFINE_OWN_PROPERTY(O, P, newDesc, Throw);
   }
+
+  return ERR_NONE;
 }
 
 var CH_08_12_06;
@@ -1732,40 +1753,31 @@ var CH_08_12_06;
 /**
  * 8.12.6 [[HasProperty]] (P)
  */
-objectProto.HAS_PROPERTY = function(P) {
+function OBJECT_HAS_PROPERTY(O, P) {
 
-  var desc = this.GET_PROPERTY(P);
-  if (desc === undefined) {
-    return false;
-  }
-
-  return true;
-};
+  var prop = OBJECT_GET_PROPERTY(O, P);
+  return (prop !== 0) ? true : false;
+}
 
 var CH_08_12_07;
 
 /**
  * 8.12.7 [[Delete]] (P, Throw)
  */
-objectProto.DELETE = function(P, Throw) {
+function OBJECT_DELETE(O, P, Throw) {
 
-  var desc = this.GET_OWN_PROPERTY(P);
-
-  if (desc === undefined) {
+  var prop = OBJECT_GET_OWN_PROPERTY(O, P);
+  if (prop === 0) {
     return true;
   }
 
-  if (desc.CONFIGURABLE === true) {
-    // remove TODO
+  if (getObject(prop).CONFIGURABLE === true) {
+    // remove
     return true;
   }
 
-  if (Throw) {
-    return ERR_TYPE_ERROR;
-  }
-
-  return false;
-};
+  return Throw ? ERR_TYPE_ERROR : ERR_NONE;
+}
 
 var CH_08_12_08;
 
@@ -1774,9 +1786,12 @@ var CH_08_12_08;
  * 
  * This is a stack function.
  * 
+ * -- V (primitive)
+ * 
+ * DefaultValue is only used in ToPrimitive
  * 
  */
-objectProto.DEFAULT_VALUE = function(hint) {
+function OBJECT_DEFAULT_VALUE(O, hint) {
 
   var P, E;
   if (hint === STRING_TYPE) {
@@ -1797,59 +1812,57 @@ objectProto.DEFAULT_VALUE = function(hint) {
     // 5. Throw a TypeError exception.
 
     P = internFindConstantString("toString");
-    MACHINE.push(P);
-    E = this.GET(); // P -- V (toString)
+    // -- F
+    E = OBJECT_GET(O, P);
     if (E < 0) {
       return E;
     }
 
     if (IsCallable(MACHINE.TOS()) === true) {
 
-      var f = MACHINE.TOS();
-      var fObj = getObject(f);
-      E = fObj.CALL(this); // f -- result
+      E = FUNCTION_CALL(O); // F -- RET
       if (E < 0) {
         return E;
       }
-      if (getObject(MACHINE.TOS()).IsPrimitive()) {
+      if (IsPrimitive(getObject(MACHINE.TOS()))) {
         return ERR_NONE;
       }
-
       MACHINE.pop(); // result --
     }
 
     P = internFindConstantString("valueOf");
-    E = this.GET(P); // -- valueOf
+    E = OBJECT_GET(O, P);
     if (E < 0) {
       return E;
     }
 
     if (IsCallable(MACHINE.TOS()) === true) {
-      E = getObject(MACHINE.TOS()).CALL(this);
+      E = FUNCTION_CALL(O); // F -- RET
       if (E < 0) {
         return E;
       }
-
-      if (getObject(MACHINE.TOS()).IsPrimitive()) {
+      if (IsPrimitive(getObject(MACHINE.TOS()))) {
         return ERR_NONE; // val
       }
-
       MACHINE.pop(); // 
     }
-
     return ERR_TYPE_ERROR;
   }
 
   // TODO prefered number
-};
+}
 
 var CH_08_12_09;
 
 /**
  * 8.12.9 [[DefineOwnProperty]] (P, Desc, Throw)
  * 
+ * This is NOT a stack function
+ * 
  * In the following algorithm, the term “Reject” means “If Throw is true, then
  * throw a TypeError exception, otherwise return false”.
+ * 
+ * NOTE!!! current is a property object and Desc is a property descriptor.
  * 
  * @returns error
  */
@@ -1858,6 +1871,7 @@ function OBJECT_DEFINE_OWN_PROPERTY(O, P, Desc, Throw) {
   assert(typeof Throw === 'boolean');
 
   var current = OBJECT_GET_OWN_PROPERTY(O, P);
+  var currObj = (current === 0) ? undefined : getObject(current);
   var extensible = getObject(O).EXTENSIBLE;
   var prop;
 
@@ -1885,7 +1899,16 @@ function OBJECT_DEFINE_OWN_PROPERTY(O, P, Desc, Throw) {
        * absent, the attribute of the newly created property is set to its
        * default value.
        */
-      // TODO assert
+      Desc.WRITABLE = (Desc.WRITABLE === undefined) ? false : Desc.WRITABLE;
+      Desc.ENUMERABLE = (Desc.ENUMERABLE === undefined) ? false
+          : Desc.ENUMERABLE;
+      Desc.CONFIGURABLE = (Desc.CONFIGURABLE === undefined) ? false
+          : Desc.CONFIGURABLE;
+
+      if (Desc.VALUE === 0) {
+        throw "error"; // why set an undefined property?
+      }
+
       prop = createProperty(O, P, Desc.VALUE, Desc.GETTER, Desc.SETTER,
           Desc.WRITABLE, Desc.ENUMERABLE, Desc.CONFIGURABLE);
 
@@ -1906,7 +1929,13 @@ function OBJECT_DEFINE_OWN_PROPERTY(O, P, Desc, Throw) {
        * default value.
        */
       assert(IsAccessorDescriptor(Desc));
-      // TODO assert
+
+      Desc.WRITABLE = (Desc.WRITABLE === undefined) ? false : Desc.WRITABLE;
+      Desc.ENUMERABLE = (Desc.ENUMERABLE === undefined) ? false
+          : Desc.ENUMERABLE;
+      Desc.CONFIGURABLE = (Desc.CONFIGURABLE === undefined) ? false
+          : Desc.CONFIGURABLE;
+
       createProperty(O, P, Desc.VALUE, Desc.GETTER, Desc.SETTER, Desc.WRITABLE,
           Desc.ENUMERABLE, Desc.CONFIGURABLE);
 
@@ -1928,7 +1957,10 @@ function OBJECT_DEFINE_OWN_PROPERTY(O, P, Desc, Throw) {
   if (Desc.GET === 0 && Desc.SET === 0 && Desc.VALUE === 0
       && Desc.WRITABLE === undefined && Desc.ENUMERABLE === undefined
       && Desc.CONFIGURABLE === undefined) {
-    return true;
+
+    throw "error"; // why this happen?
+
+    // return true;
   }
 
   /**
@@ -1937,17 +1969,17 @@ function OBJECT_DEFINE_OWN_PROPERTY(O, P, Desc, Throw) {
    * current when compared using the SameValue algorithm (9.12).
    */
   // is this simple implementation OK? TODO
-  if (current.VALUE === Desc.VALUE && current.GET === Desc.GET
-      && current.SET === Desc.SET && current.WRITABLE === Desc.WRITABLE
-      && current.ENUMERABLE === Desc.ENUMERABLE
-      && current.CONFIGURABLE === Desc.CONFIGURABLE) {
+  if (currObj.VALUE === Desc.VALUE && currObj.GET === Desc.GET
+      && currObj.SET === Desc.SET && currObj.WRITABLE === Desc.WRITABLE
+      && currObj.ENUMERABLE === Desc.ENUMERABLE
+      && currObj.CONFIGURABLE === Desc.CONFIGURABLE) {
     return true;
   }
 
   /**
    * 7. If the [[Configurable]] field of current is false then
    */
-  if (current.CONFIGURABLE === false) {
+  if (currObj.CONFIGURABLE === false) {
     /**
      * a. Reject, if the [[Configurable]] field of Desc is true.
      */
@@ -1962,7 +1994,7 @@ function OBJECT_DEFINE_OWN_PROPERTY(O, P, Desc, Throw) {
      * [[Enumerable]] fields of current and Desc are the Boolean negation of
      * each other.
      */
-    if (Desc.ENUMERABLE !== undefined && Desc.ENUMERABLE !== current.ENUMERABLE) {
+    if (Desc.ENUMERABLE !== undefined && Desc.ENUMERABLE !== currObj.ENUMERABLE) {
       if (Throw) {
         return ERR_TYPE_ERROR;
       }
@@ -1975,7 +2007,18 @@ function OBJECT_DEFINE_OWN_PROPERTY(O, P, Desc, Throw) {
    * required.
    */
   if (IsGenericDescriptor(Desc)) {
-
+    
+    // these are duplicate code, considering function. TODO
+    if (Desc.GETTER !== 0) {
+      currObj.GETTER = Desc.GETTER;
+    }
+    if (Desc.SETTER !== 0) {
+      currObj.SETTER = Desc.SETTER;
+    }
+    if (Desc.VALUE !== 0) {
+      currObj.VALUE = Desc.VALUE;
+    }
+    return true;
   }
   /**
    * 9. Else, if IsDataDescriptor(current) and IsDataDescriptor(Desc) have
@@ -1985,7 +2028,7 @@ function OBJECT_DEFINE_OWN_PROPERTY(O, P, Desc, Throw) {
     /**
      * a. Reject, if the [[Configurable]] field of current is false.
      */
-    if (current.CONFIGURABLE === false) {
+    if (getObject(current).CONFIGURABLE === false) {
       if (Throw) {
         return ERR_TYPE_ERROR;
       }
@@ -2002,6 +2045,10 @@ function OBJECT_DEFINE_OWN_PROPERTY(O, P, Desc, Throw) {
        * rest of the property’s attributes to their default values.
        */
       // TODO Convert data property to accessor property !!!
+      set(0, current, 'VALUE');
+      getObject(current).WRITABLE = false;
+      set(Desc.SETTER, current, 'SETTER');
+      set(Desc.GETTER, current, 'GETTER');
     }
 
     /**
@@ -2015,29 +2062,32 @@ function OBJECT_DEFINE_OWN_PROPERTY(O, P, Desc, Throw) {
        * property’s attributes to their default values.
        */
       // TODO Convert accessor property to data property !!!
+      set(0, current, 'SETTER');
+      set(0, current, 'GETTER');
+      set(Desc.VALUE, current, 'VALUE');
+      getObject(current).WRITABLE = false;
     }
   }
   /**
    * 10. Else, if IsDataDescriptor(current) and IsDataDescriptor(Desc) are both
    * true, then
    */
-  else if (IsDataProperty(current) === true
-      && IsDataDescriptor(Desc) === true) {
+  else if (IsDataProperty(current) === true && IsDataDescriptor(Desc) === true) {
     /**
      * a. If the [[Configurable]] field of current is false, then
      */
-    if (current.CONFIGURABLE === false) {
+    if (currObj.CONFIGURABLE === false) {
       /**
        * i. Reject, if the [[Writable]] field of current is false and the
        * [[Writable]] field of Desc is true.
        */
-      if (current.WRITABLE === false && Desc.WRITABLE === true) {
+      if (currObj.WRITABLE === false && Desc.WRITABLE === true) {
         return (Throw) ? ERR_TYPE_ERROR : false;
       }
       /**
        * ii. If the [[Writable]] field of current is false, then
        */
-      if (current.WRITABLE === false) {
+      if (currObj.WRITABLE === false) {
         /**
          * 1. Reject, if the [[Value]] field of Desc is present and
          * SameValue(Desc.[[Value]], current.[[Value]]) is false.
@@ -2063,12 +2113,12 @@ function OBJECT_DEFINE_OWN_PROPERTY(O, P, Desc, Throw) {
     /**
      * a. If the [[Configurable]] field of current is false, then
      */
-    if (current.CONFIGURABLE === false) {
+    if (currObj.CONFIGURABLE === false) {
       /**
        * i. Reject, if the [[Set]] field of Desc is present and
        * SameValue(Desc.[[Set]], current.[[Set]]) is false.
        */
-      if (Desc.SET && Desc.SET !== current.SET) {
+      if (Desc.SETTER && Desc.SETTER !== currObj.SETTER) {
         return (Throw) ? ERR_TYPE_ERROR : false;
       }
 
@@ -2076,7 +2126,7 @@ function OBJECT_DEFINE_OWN_PROPERTY(O, P, Desc, Throw) {
        * ii. Reject, if the [[Get]] field of Desc is present and
        * SameValue(Desc.[[Get]], current.[[Get]]) is false.
        */
-      if (Desc.GET && Desc.GET !== current.GET) {
+      if (Desc.GETTER && Desc.GETTER !== current.GETTER) {
         return (Throw) ? ERR_TYPE_ERROR : false;
       }
     }
@@ -2087,6 +2137,16 @@ function OBJECT_DEFINE_OWN_PROPERTY(O, P, Desc, Throw) {
    * correspondingly named attribute of the property named P of object O to the
    * value of the field.
    */
+  // TODO attributes?
+  if (Desc.GETTER !== 0) {
+    currObj.GETTER = Desc.GETTER;
+  }
+  if (Desc.SETTER !== 0) {
+    currObj.SETTER = Desc.SETTER;
+  }
+  if (Desc.VALUE !== 0) {
+    currObj.VALUE = Desc.VALUE;
+  }
 
   /**
    * 13. Return true
@@ -2179,7 +2239,7 @@ function ToInteger() {
 
 }
 
-var CH_09_08;
+var CH_09_08_TO_STRING;
 
 /**
  * 9.8 ToString()
@@ -2348,24 +2408,7 @@ function SameValue(x, y) {
   return (x === y);
 }
 
-function createObject(proto) {
 
-  if (typeof proto === 'number') {
-    throw "Use some prototype object as parameter";
-  }
-
-  var obj = Object.create(proto);
-
-  obj.type = OBJECT_TYPE;
-  obj.count = 0;
-  obj.referrer = [];
-  obj.property = 0; // referencing
-  obj.PROTOTYPE = 0; // referencing
-
-  var id = register(obj);
-
-  return id;
-}
 
 function createObjectObject(PROTO, extensible, tag) {
 
@@ -2675,47 +2718,13 @@ function bootstrap() {
   setPropertyByLiteral(FUNCTION_CONSTRUCTOR, id, 'Function', false, false,
       false);
 
-};
+}
 
 /*******************************************************************************
  * 
  * Abstract Abstract Abstract Abstract
  * 
  ******************************************************************************/
-
-/**
- * 9.1 ToPrimitve(Input, PreferredType)
- */
-function ToPrimitive(Input, PreferredType) {
-
-  var type = Input.type;
-
-  if (type === UNDEFINED_TYPE || type === NULL_TYPE || type === BOOLEAN_TYPE
-      || type === NUMBER_TYPE || type === STRING_TYPE) {
-    return Input;
-  }
-
-  assert(type === OBJECT_TYPE);
-
-  return Input.DEFAULT_VALUE(PreferredType);
-}
-
-/**
- * 9.2 ToBoolean(Input)
- */
-function toBoolean(Input) {
-
-  var type = Input.type;
-
-  if (type === UNDEFINED_TYPE || type === NULL_TYPE) {
-    return false;
-  }
-
-  if (type === BOOLEAN_TYPE) {
-    return;
-
-  }
-}
 
 var CH_11_09_03;
 
@@ -3213,6 +3222,13 @@ RedbankVM.prototype.pop = function() {
   mainStackLength--;
 };
 
+// w1 w2 -- w2
+RedbankVM.prototype.nip = function() {
+  
+  set(this.TOS(), MAIN_STACK, this.indexOfNOS());
+  this.pop();
+}
+
 RedbankVM.prototype.subst = function(id, index) {
 
   set(id, MAIN_STACK, index);
@@ -3406,7 +3422,6 @@ RedbankVM.prototype.storeProperty = function() {
   var P = this.NOS();
   var V = this.TOS();
 
-  // O.PUT(P, V, false); // TODO how to determine throw?
   OBJECT_PUT(O, P, V, false);
 };
 
@@ -4077,7 +4092,6 @@ RedbankVM.prototype.run = function(input, testcase, initmode) {
   console.log(Common.Format.hline);
   console.log("[[ Stop Running ]]");
   console.log(Common.Format.hline);
-
 };
 
 module.exports = RedbankVM;
