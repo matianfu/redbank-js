@@ -668,6 +668,7 @@ FunctionNode.prototype.compileArrayExpression = function(ast) {
 FunctionNode.prototype.compileAssignmentExpression = function(ast) {
   this.compileAST(ast.left);
   this.compileAST(ast.right);
+  this.emit("GETVAL");
   this.emit('=');
 };
 
@@ -814,11 +815,12 @@ FunctionNode.prototype.compileCallExpression = function(ast) {
 
   // put callee, may evaluate to lvalue TODO
   this.compileAST(ast.callee);
+  this.emit("CALLEX");
 
   // put this as global
-  if (ast.callee.type !== 'MemberExpression') {
-    this.emit("LITG");
-  }
+//  if (ast.callee.type !== 'MemberExpression') {
+//    this.emit("LITG");
+//  }
 
   // put arguments
   for (var i = 0; i < ast.arguments.length; i++) {
@@ -1052,15 +1054,19 @@ FunctionNode.prototype.compileLiteral = function(ast) {
 // computed: boolean;
 // }
 FunctionNode.prototype.compileMemberExpression = function(ast) {
+  
   this.compileAST(ast.object);
+  this.emit("GETVAL");
   this.compileAST(ast.property);
+  this.emit("GETVAL");
+  this.emit("MEMEX");
 
-  if (ast.__parent__.type === 'CallExpression' && ast === ast.__parent__.callee) {
-    this.emit("FETCHOF");
-  }
-  else if (exprAsVal(ast)) {
-    this.emit("FETCHO");
-  }
+//  if (ast.__parent__.type === 'CallExpression' && ast === ast.__parent__.callee) {
+//    this.emit("FETCHOF");
+//  }
+//  else if (exprAsVal(ast)) {
+//    this.emit("FETCHO");
+//  }
 };
 
 // interface NewExpression <: Expression {
@@ -1230,6 +1236,7 @@ FunctionNode.prototype.compileVariableDeclarator = function(ast) {
 
     this.emit('LITA', 'LOCAL', i);
     this.compileAST(ast.init);
+    this.emit("GETVAL");
     this.emit("STORE");
   }
 };

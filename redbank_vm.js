@@ -135,7 +135,7 @@ var STRING_HASHTABLE_SIZE = (1 << STRING_HASHBITS);
 var PROPERTY_HASHBITS = 7;
 var PROPERTY_HASHTABLE_SIZE = (1 << PROPERTY_HASHBITS);
 
-var STACK_SIZE_LIMIT = 65536;
+var STACK_SIZE_LIMIT = 256;
 
 /**
  * The Object Heap in red bank
@@ -456,7 +456,7 @@ function decr(id, object, member) {
         decr(obj.elem[v], id, v);
       }
       break;
-      
+
     case 'reference':
       decr(obj.base, id, 'base');
       decr(obj.name, id, 'name');
@@ -941,12 +941,12 @@ function createReferenceType(base, name, strict) {
   obj.count = 0;
   obj.referrer = [];
 
-  obj.base = 0;    // ref
-  obj.name = 0;    // ref
+  obj.base = 0; // ref
+  obj.name = 0; // ref
   obj.strict = strict;
-  
+
   var id = register(obj);
-  
+
   set(base, id, 'base');
   set(name, id, 'name');
   return id;
@@ -992,7 +992,7 @@ function GetValue() {
       if (E < 0) {
         return E;
       }
-      
+
       MACHINE.nip();
       return ERR_NONE;
     }
@@ -1058,6 +1058,32 @@ var CH_08_07_02_PUT_VALUE;
 
 function PutValue(V, W) {
 
+  if (typeOfObject(MACHINE.NOS()) !== REFERENCE_TYPE) {
+    return ERR_REFERENCE_ERROR;
+  }
+
+  var ref = MACHINE.NOS();
+  var refObj = getObject(ref);
+  var base = refObj.GetBase();
+
+  if (refObj.IsUnresolvableReference()) {
+    if (refObj.IsStrictReference()) {
+      return ERR_REFERENCE_ERROR;
+    }
+    return OBJECT_PUT(JS_GLOBAL, refObj.GetReferencedName(), MACHINE.TOS(),
+        false);
+  }
+
+  assert(refObj.IsPropertyReference());
+
+  if (refObj.HasPrimitiveBase() === false) {
+    // call put internal method
+    return OBJECT_PUT(base, refObj.GetReferencedName(), MACHINE.TOS(), refObj
+        .IsStrictReference());
+  }
+  else {
+    throw "not supported yet.";
+  }
 }
 
 /**
@@ -1784,9 +1810,7 @@ var CH_08_12_08;
 /**
  * 8.12.8 [[DefaultValue]] (hint)
  * 
- * This is a stack function.
- * 
- * -- V (primitive)
+ * This is a stack function. -- V (primitive)
  * 
  * DefaultValue is only used in ToPrimitive
  * 
@@ -2007,7 +2031,7 @@ function OBJECT_DEFINE_OWN_PROPERTY(O, P, Desc, Throw) {
    * required.
    */
   if (IsGenericDescriptor(Desc)) {
-    
+
     // these are duplicate code, considering function. TODO
     if (Desc.GETTER !== 0) {
       currObj.GETTER = Desc.GETTER;
@@ -2325,7 +2349,7 @@ var CH_09_10;
 function CheckObjectCoercible(id) {
 
   var obj = getObject(id);
-  assert(obj.isEcmaLangType() === true);
+  assert(IsEcmaLangType(obj) === true);
 
   if (typeOfObject(id) === UNDEFINED_TYPE || typeOfObject(id) === NULL_TYPE) {
     return ERR_TYPE_ERROR;
@@ -2345,10 +2369,10 @@ var CH_09_11;
 function IsCallable(id) {
 
   var obj = getObject(id);
-  assert(obj.isEcmaLangType() === true);
+  assert(IsEcmaLangType(obj) === true);
 
   // TODO verify
-  return (obj.isObject() && obj.CALL !== undefined) ? true : false;
+  return (IsObject(obj) && obj.CALL !== undefined) ? true : false;
 }
 
 var CH_09_12;
@@ -2407,8 +2431,6 @@ function SameValue(x, y) {
 
   return (x === y);
 }
-
-
 
 function createObjectObject(PROTO, extensible, tag) {
 
@@ -3224,7 +3246,7 @@ RedbankVM.prototype.pop = function() {
 
 // w1 w2 -- w2
 RedbankVM.prototype.nip = function() {
-  
+
   set(this.TOS(), MAIN_STACK, this.indexOfNOS());
   this.pop();
 }
@@ -3425,6 +3447,15 @@ RedbankVM.prototype.storeProperty = function() {
   OBJECT_PUT(O, P, V, false);
 };
 
+RedbankVM.prototype.storeOrAssignByReference = function(mode) {
+
+  assertEcmaLangType(this.TOS());
+  assertType(this.NOS(), REFERENCE_TYPE);
+
+  PutValue();
+  this.nip();
+};
+
 /**
  * Store or Assign to object/property
  * 
@@ -3496,7 +3527,11 @@ RedbankVM.prototype.printstack = function() {
         default:
           console.log("unknown object class");
         }
+        break;
 
+      case 'reference':
+        console.log(i + " : " + id + " (reference) " + obj.base + " "
+            + obj.name);
         break;
 
       default:
@@ -3701,6 +3736,46 @@ RedbankVM.prototype.stepCall = function() {
   this.doReturn();
 };
 
+RedbankVM.prototype.stepCallEx = function() {
+  
+  if (typeOfObject(this.TOS()) === REFERENCE_TYPE) {
+
+    var ref = this.TOS();
+    var refObj = getObject(ref);
+    
+    // R -- R base
+    this.push(refObj.base);
+    // R -- R base R
+    this.push(ref);
+    
+    // R base R -- R base F
+    GetValue();
+    
+    if (typeOfObject(this.TOS()) !== OBJECT_TYPE) {
+      return ERR_TYPE_ERROR;
+    }
+    if (IsCallable(this.TOS()) !== true) {
+      return ERR_TYPE_ERROR;
+    }
+    
+    // R base F -- F base F
+    set(this.TOS(), MAIN_STACK, this.indexOfThirdOS());
+    // F base F -- F base
+    this.pop();
+  }
+  else {
+    if (typeOfObject(this.TOS()) !== OBJECT_TYPE) {
+      return ERR_TYPE_ERROR;
+    }
+    if (IsCallable(this.TOS()) !== true) {
+      return ERR_TYPE_ERROR;
+    }
+    
+    // TODO don't know if environment record or ... see 11.2.3
+    this.push(JS_GLOBAL);
+  }
+};
+
 RedbankVM.prototype.compare = function(a, b) {
 
   var aObj = getObject(a);
@@ -3853,6 +3928,11 @@ RedbankVM.prototype.step = function(code, bytecode) {
   case "CALL":
     this.stepCall();
     break;
+    
+  case "CALLEX":
+    this.stepCallEx();
+    
+    break;
 
   case "CAPTURE":
     this.stepCapture(bytecode);
@@ -3877,6 +3957,10 @@ RedbankVM.prototype.step = function(code, bytecode) {
   case "FUNC": // -- f1
     id = createFunction(bytecode.arg1, bytecode.arg2, bytecode.arg3);
     this.push(id);
+    break;
+
+  case "GETVAL":
+    GetValue();
     break;
 
   case "JUMP":
@@ -3942,9 +4026,9 @@ RedbankVM.prototype.step = function(code, bytecode) {
     this.push(id);
     break;
 
-  case "LITG":
-    this.push(JS_GLOBAL);
-    break;
+//  case "LITG":
+//    this.push(JS_GLOBAL);
+//    break;
 
   case "LITN":
     // push n UNDEFINED object
@@ -3957,6 +4041,14 @@ RedbankVM.prototype.step = function(code, bytecode) {
     // create an empty object and push to stack
     id = createObjectObject(OBJECT_PROTO, true);
     this.push(id);
+    break;
+
+  case "MEMEX":
+    CheckObjectCoercible(this.NOS());
+    ToString();
+    id = createReferenceType(this.NOS(), this.TOS(), false);
+    set(id, MAIN_STACK, this.indexOfNOS());
+    this.pop();
     break;
 
   case 'THROW':
@@ -4051,6 +4143,9 @@ RedbankVM.prototype.step = function(code, bytecode) {
     }
     else if (typeOfObject(this.NOS()) === 'string') {
       this.storeOrAssignToObject('assign');
+    }
+    else if (typeOfObject(this.NOS()) === 'reference') {
+      this.storeOrAssignByReference('assign');
     }
     else {
       throw "don't known how to assign";
