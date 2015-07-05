@@ -849,7 +849,7 @@ function run_test262() {
 }
 
 run_testsuite(TESTS);
-// run_single_in_suite(TESTS, "internal", "strict_function");
+// run_single_in_suite(TESTS, "object", "object_member_expr_assign");
 
 
 
