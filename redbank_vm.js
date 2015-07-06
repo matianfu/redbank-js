@@ -790,7 +790,7 @@ function createBoolean(value) {
   var obj = Object.create(typeProto);
 
   obj.type = BOOLEAN_TYPE;
-  obj.count = 0;
+  obj.count = Infinity;
   obj.referrer = [];
   obj.value = value;
   obj.tag = (value) ? "true" : "false";
@@ -2251,10 +2251,62 @@ var CH_09_03;
  * 
  * This is a stack function
  * 
+ * V -- N
+ * 
  * @returns error
  */
 function ToNumber() {
-  // TODO
+
+  var ret;
+  var type = typeOfObject(MACHINE.TOS());
+
+  if (type === UNDEFINED_TYPE) {
+    MACHINE.setTop(JS_NAN);
+  }
+  else if (type === NULL_TYPE) {
+    MACHINE.setTop(JS_POSITIVE_ZERO);
+  }
+  else if (type === BOOLEAN_TYPE) {
+    if (MACHINE.TOS() === JS_TRUE) {
+      MACHINE.setTop(createNumber(1));
+    }
+    else {
+      MACHINE.setTop(JS_POSITIVE_ZERO);
+    }
+  }
+  else if (type === STRING_TYPE) {
+    ToNumberAppliedToString();
+  }
+  else if (type === OBJECT_TYPE) {
+    ToPrimitive();
+    ToNumber();
+  }
+  // else if (type === NUMBER_TYPE) {
+  // // do nothing
+  // }
+}
+
+/**
+ * 9.3.1 ToNumber Applied to the String Type
+ * 
+ * This is a stack function
+ * 
+ * This is a dirty implementation (aka, use host language features, not strict
+ * to spec)
+ */
+function ToNumberAppliedToString() {
+
+  var id = MACHINE.TOS(); // is a string
+  var obj = getObject(id);
+  var val = obj.value;
+  var num = Number(val);
+
+  if (isNaN(num)) {
+    MACHINE.setTop(JS_NAN);
+  }
+  else {
+    MACHINE.setTop(createNumber(num));
+  }
 }
 
 var CH_09_04;
@@ -2744,16 +2796,125 @@ function bootstrap() {
 
 /*******************************************************************************
  * 
- * Abstract Abstract Abstract Abstract
+ * CHAPTER 11 Expressions
  * 
  ******************************************************************************/
+var CH_11_01_PRIMARY_EXPRESSIONS;
+/**
+ * 11.1 Primary Expressions
+ */
 
-var CH_11_09_03;
+var CH_11_02_LEFT_HAND_SIDE_EXPRESSIONS;
+/**
+ * 11.2 Left-Hand-Side Expressions
+ */
+
+var CH_11_03_POSTFIX_EXPRESSIONS;
+/**
+ * 11.3 Postfix Expressions
+ */
+
+var CH_11_04_UNARY_OPERATORS;
+/**
+ * 11.4 Unary Operators
+ */
+
+var CH_11_04_03_TYPEOF_OPERATOR;
+/**
+ * 11.4.3 The typeof Operator
+ */
+function TypeOfOperator() {
+
+  var str;
+  if (getObject(MACHINE.TOS()) === REFERENCE_TYPE) {
+    var RObj = getObject(MACHINE.TOS());
+    if (RObj.IsUnresolvableReference()) {
+      str = "undefined";
+    }
+    else {
+      // R -- V
+      GetValue();
+    }
+  }
+
+  if (str === undefined) {
+    var type = typeOfObject(MACHINE.TOS());
+    if (type === UNDEFINED_TYPE) {
+      str = "undefined";
+    }
+    else if (type === NULL_TYPE) {
+      str = "object";
+    }
+    else if (type === BOOLEAN_TYPE) {
+      str = "boolean";
+    }
+    else if (type === NUMBER_TYPE) {
+      str = "number";
+    }
+    else if (type === STRING_TYPE) {
+      str = "string";
+    }
+    else if (type === OBJECT_TYPE) {
+      var c = classOfObject(MACHINE.TOS());
+      if (c === FUNCTION_CLASS) {
+        str = "function";
+      }
+      else {
+        str = "object";
+      }
+    }
+  }
+
+  MACHINE.setTop(createString(str));
+}
+
+var CH_11_05_MULTIPLICATIVE_OPERATORS;
+/**
+ * 11.5 Multiplicative Operators
+ */
+
+var CH_11_06_ADDITIVE_OPERATORS;
+/**
+ * 11.6 Additive Operators
+ */
+
+var CH_11_07_BITWISE_SHIFT_OPERATORS;
+/**
+ * 11.7 Bitwise Shift Operators
+ */
+
+var CH_11_08_RELATIONAL_OPERATORS;
+/**
+ * 11.8 Relational Operators
+ */
+
 
 /**
- * ecma262 11.9.3
+ * 11.9.1 The Equals Operator ( == )
  */
-function abstractEqualityComparison(x, y) {
+function EqualsOperator(x, y) {
+  return AbstractEqualityComparison(x, y);
+}
+
+var CH_11_09_02;
+/**
+ * 11.9.2 The Does-not-equal Operator ( != )
+ */
+function DoesNotEqualOperator(x, y) {
+  if (AbstractEqualityComparison(x, y) === true) {
+    return false;
+  }
+  return true;
+}
+
+var CH_11_09_03;
+/**
+ * 11.9.3 The Abstract Equality Comparison Algorithm
+ * 
+ * This function use stack, but it is not necessarily a stack function, since it
+ * only returns a host value. This is true if no function call throws error. TODO
+ */
+function AbstractEqualityComparison(x, y) {
 
   var typeX = typeOfObject(x);
   var typeY = typeOfObject(y);
@@ -2763,9 +2924,8 @@ function abstractEqualityComparison(x, y) {
     if (typeX === UNDEFINED_TYPE || typeX === NULL_TYPE) {
       return true;
     }
-
     if (typeX === NUMBER_TYPE) {
-      if (x === JS_NAN || y === JS_NAN) {
+      if (isNaN(getObject(x).value) || isNaN(getObject(y).value)) {
         return false;
       }
       if (getObject(x).value === getObject(y).value) {
@@ -2806,93 +2966,139 @@ function abstractEqualityComparison(x, y) {
   // 4. If Type(x) is Number and Type(y) is String, return the result of the
   // comparison x == ToNumber(y).
   if (typeX === NUMBER_TYPE && typeY === STRING_TYPE) {
-    // TODO
+    MACHINE.push(y);
+    ToNumber();
+
+    var ns = AbstractEqualityComparison(x, MACHINE.TOS());
+
+    MACHINE.pop();
+    return ns;
   }
 
   // 5. If Type(x) is String and Type(y) is Number, return the result of the
   // comparison ToNumber(x) == y.
   if (typeX === STRING_TYPE && typeY === NUMBER_TYPE) {
-    // TODO
+    MACHINE.push(x);
+    ToNumber();
+
+    var sn = AbstractEqualityComparison(MACHINE.TOS(), y);
+
+    MACHINE.pop();
+    return sn;
   }
 
   // 6.If Type(x) is Boolean, return the result of the comparison ToNumber(x) ==
   // y.
   if (typeX === BOOLEAN_TYPE) {
-    // TODO
+    MACHINE.push(x);
+    ToNumber();
+
+    var by = AbstractEqualityComparison(MACHINE.TOS(), y);
+
+    MACHINE.pop();
+    return by;
   }
 
   // 7. If Type(y) is Boolean, return the result of the comparison x ==
   // ToNumber(y).
   if (typeY === BOOLEAN_TYPE) {
-    // TODO
+    MACHINE.push(y);
+    ToNumber();
+
+    var xb = AbstractEqualityComparison(x, MACHINE.TOS());
+
+    MACHINE.pop();
+    return xb;
   }
 
   // 8. If Type(x) is either String or Number and Type(y) is Object, return the
   // result of the comparison x == ToPrimitive(y).
   if ((typeX === STRING_TYPE || typeX === NUMBER_TYPE) && typeY === OBJECT_TYPE) {
-    // TODO
+    MACHINE.push(y);
+    ToPrimitive();
+
+    var sno = AbstractEqualityComparison(x, MACHINE.TOS());
+
+    MACHINE.pop();
+    return sno;
   }
 
   // 9. If Type(x) is Object and Type(y) is either String or Number, return the
   // result of the comparison ToPrimitive(x) == y.
   if (typeX === OBJECT_TYPE && (typeY === STRING_TYPE || typeY === NUMBER_TYPE)) {
+    MACHINE.push(x);
+    ToPrimitive();
 
+    var osn = AbstractEqualityComparison(MACHINE.TOS(), y);
+    MACHINE.pop();
+    return osn;
   }
 
   // 10. return false;
+  return false;
 
-  // TODO not correct yet
-  return (getObject(x).value == getObject(y).value) ? true : false;
+  // not correct yet
+  // return (getObject(x).value == getObject(y).value) ? true : false;
 };
 
-var CH_11_09_06;
+var CH_11_09_04;
+
 /**
- * ecma262, 11.9.6
+ * 11.9.4 The Strict Equals Operator ( === )
  */
-function strictEqualityComparison(x, y) {
+function StrictEqualsOperator(x, y) {
+  return StrictEqualityComparison(x, y);
+}
+
+var CH_11_09_05;
+
+/**
+ * 11.9.5 The Strict Does-not-equal Operator ( !== )
+ */
+function StrictDoesNotEqualOperator(x, y) {
+  if (StrictEqualityComparison(x, y) === true) {
+    return false;
+  }
+  return true;
+}
+
+var CH_11_09_06_STRICT_EQUALITY_COMPARISON;
+/**
+ * 11.9.6 The Strict Equality Comparison Algorithm
+ */
+function StrictEqualityComparison(x, y) {
 
   if (typeOfObject(x) !== typeOfObject(y)) {
     return false;
   }
-  if (typeOfObject(x) === 'undefined') {
+  if (typeOfObject(x) === UNDEFINED_TYPE) {
     return true;
   }
-  if (typeOfObject(x) === 'null') {
+  if (typeOfObject(x) === NULL_TYPE) {
     return true;
   }
 
-  if (typeOfObject(x) === 'number') {
-    if (x === this.NAN || y === this.NAN) {
-      return false;
-    }
-    if (getObject(x).value === getObject(x).value) {
-      return true;
-    }
-    if (getObject(x).value === this.JS_POSITIVE_ZERO
-        && getObject(y).value === this.NEGATIVE_ZERO) {
-      return true;
-    }
-    if (getObject(x).value === this.NEGATIVE_ZERO
-        && getObject(y).value === this.JS_POSITIVE_ZERO) {
-      return true;
-    }
-    return false;
-  }
-
-  if (typeOfObject(x) === 'string') {
-    if (getObject(x).isInterned && getObject(y).isInterned) {
-      if (x === y) {
-        return true;
-      }
+  if (typeOfObject(x) === NUMBER_TYPE) {
+    if (isNaN(getObject(x).value) || isNaN(getObject(y).value)) {
       return false;
     }
     if (getObject(x).value === getObject(y).value) {
       return true;
     }
+    if (x === JS_POSITIVE_ZERO && y === JS_NEGATIVE_ZERO) {
+      return true;
+    }
+    if (x === JS_NEGATIVE_ZERO && y === JS_POSITIVE_ZERO) {
+      return true;
+    }
     return false;
   }
 
-  if (typeOfObject(x) === 'boolean') {
+  if (typeOfObject(x) === STRING_TYPE) {
+    return (getObject(x).value === getObject(y).value);
+  }
+
+  if (typeOfObject(x) === BOOLEAN_TYPE) {
     return (x === y) ? true : false;
   }
   return (x === y) ? true : false;
@@ -3737,27 +3943,27 @@ RedbankVM.prototype.stepCall = function() {
 };
 
 RedbankVM.prototype.stepCallEx = function() {
-  
+
   if (typeOfObject(this.TOS()) === REFERENCE_TYPE) {
 
     var ref = this.TOS();
     var refObj = getObject(ref);
-    
+
     // R -- R base
     this.push(refObj.base);
     // R -- R base R
     this.push(ref);
-    
+
     // R base R -- R base F
     GetValue();
-    
+
     if (typeOfObject(this.TOS()) !== OBJECT_TYPE) {
       return ERR_TYPE_ERROR;
     }
     if (IsCallable(this.TOS()) !== true) {
       return ERR_TYPE_ERROR;
     }
-    
+
     // R base F -- F base F
     set(this.TOS(), MAIN_STACK, this.indexOfThirdOS());
     // F base F -- F base
@@ -3770,39 +3976,16 @@ RedbankVM.prototype.stepCallEx = function() {
     if (IsCallable(this.TOS()) !== true) {
       return ERR_TYPE_ERROR;
     }
-    
+
     // TODO don't know if environment record or ... see 11.2.3
     this.push(JS_GLOBAL);
   }
 };
 
-RedbankVM.prototype.compare = function(a, b) {
-
-  var aObj = getObject(a);
-  var bObj = getObject(b);
-
-  if (a.isPrimitive && typeof a == 'number' && isNaN(a.data) || b.isPrimitive
-      && typeof b == 'number' && isNaN(b.data)) {
-    return NaN;
-  }
-  if (a.isPrimitive && b.isPrimitive) {
-    a = a.data;
-    b = b.data;
-  }
-  else {
-    // TODO: Handle other types.
-    return NaN;
-  }
-  if (a < b) {
-    return -1;
-  }
-  else if (a > b) {
-    return 1;
-  }
-  return 0;
-};
-
 RedbankVM.prototype.stepBinop = function(binop) {
+
+  assertEcmaLangType(this.TOS());
+  assertEcmaLangType(this.NOS());
 
   var left = this.NOS();
   var right = this.TOS();
@@ -3863,45 +4046,31 @@ RedbankVM.prototype.stepBinop = function(binop) {
   }
   else if (binop === '===') {
 
-    assertEcmaLangType(this.TOS());
-    assertEcmaLangType(this.NOS());
-
-    var equality;
-
-    if (typeOfObject(this.TOS()) !== typeOfObject(this.NOS())) {
-      equality = false;
-    }
-    else {
-      var type = typeOfObject(this.TOS());
-      if (type === 'undefined') {
-        equality = true;
-      }
-      else if (type === 'boolean') {
-        equality = (this.TOS() === this.NOS());
-      }
-      else if (type === 'number') {
-        equality = (getObject(this.TOS()).value === getObject(this.NOS()).value);
-      }
-      else if (type === 'string') { // TODO now all strings are interned
-        equality = (this.TOS() === this.NOS());
-      }
-      else if (type === 'object' || type === "function") {
-        equality = (this.TOS() === this.NOS());
-      }
-      else {
-        throw "not supported for equality";
-      }
-    }
-
+    var strictEqual = StrictEqualsOperator(left, right);
     this.pop();
     this.pop();
+    this.push(strictEqual ? JS_TRUE : JS_FALSE);
+  }
+  else if (binop === '!==') {
 
-    if (equality) {
-      this.push(JS_TRUE);
-    }
-    else {
-      this.push(JS_FALSE);
-    }
+    var strictNotEqual = StrictDoesNotEqualOperator(left, right);
+    this.pop();
+    this.pop();
+    this.push(strictNotEqual ? JS_TRUE : JS_FALSE);
+  }
+  else if (binop === '==') {
+    
+    var equal = EqualsOperator(left, right);
+    this.pop();
+    this.pop();
+    this.push(equal ? JS_TRUE : JS_FALSE);
+  }
+  else if (binop === '!=') {
+    
+    var doesNotEqual = DoesNotEqualOperator(left, right);
+    this.pop();
+    this.pop();
+    this.push(doesNotEqual ? JS_TRUE : JS_FALSE);
   }
   else {
     throw "not supported yet";
@@ -3928,10 +4097,10 @@ RedbankVM.prototype.step = function(code, bytecode) {
   case "CALL":
     this.stepCall();
     break;
-    
+
   case "CALLEX":
     this.stepCallEx();
-    
+
     break;
 
   case "CAPTURE":
@@ -3948,10 +4117,6 @@ RedbankVM.prototype.step = function(code, bytecode) {
 
   case "FETCHO": // parent, prop -- value
     this.fetcho();
-    break;
-
-  case "FETCHOF": // parent, prop -- parent, value
-    this.fetchof();
     break;
 
   case "FUNC": // -- f1
@@ -3971,7 +4136,7 @@ RedbankVM.prototype.step = function(code, bytecode) {
 
   case "JUMPC":
     if (this.TOS() === JS_FALSE) {
-      this.PC = this.findLabel(this.code, bytecode.arg2);
+      this.PC = this.findLabel(this.code, bytecode.arg1);
     }
     else if (this.TOS() !== JS_TRUE) {
       throw "non-boolean value on stack";
@@ -4020,15 +4185,14 @@ RedbankVM.prototype.step = function(code, bytecode) {
     else if (typeof val === 'string') {
       id = createString(val);
     }
+    else if (typeof val === 'boolean') {
+      id = val ? JS_TRUE : JS_FALSE;
+    }
     else {
       throw "error";
     }
     this.push(id);
     break;
-
-//  case "LITG":
-//    this.push(JS_GLOBAL);
-//    break;
 
   case "LITN":
     // push n UNDEFINED object
@@ -4130,6 +4294,10 @@ RedbankVM.prototype.step = function(code, bytecode) {
   case "THIS":
     id = mainStackObj.elem[this.FP - 2];
     this.push(id);
+    break;
+
+  case "TYPEOF":
+    TypeOfOperator();
     break;
 
   case 'UNTRAP':

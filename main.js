@@ -119,8 +119,15 @@ function run_case(testcase, opt_logast, opt_logsrc) {
 }
 
 function run_script(source) {
-  
-  var ast = Esprima_Main.parse(source);
+
+  var ast;
+  try {
+    ast = Esprima_Main.parse(source);
+  }
+  catch (e) {
+    console.log("Compile Error");
+    return;
+  }
   var bytecodes = Compiler.compile(ast);
   var vm = new RedbankVM();
   vm.run(bytecodes);
@@ -586,6 +593,12 @@ var testcase_control = {
       vm.assertStackSlotNumberValue(0, 19);
     }
   },
+  S8_3_A1_T1 : {
+    source : 'if (x !== undefined) { $ERROR("#0 x !== undefined, but actual is "+ x); }'
+        + 'var x = true; var y = false;'
+        + 'if (x !== true) { $ERROR("#1.1 x !== true, but actual is "+ x); }'
+        + 'if (y !== false) { $ERROR("#1.1 y !== false, but actual is "+ y); }'
+  }
 };
 
 var testcase_object = {
@@ -626,9 +639,9 @@ var testcase_object = {
       vm.assertStackSlotNumberValue(0, 254);
     }
   },
-//  object_expr_getter : {
-//    source : 'var a; var b = { x: 123, get xplus() { return this.x + 1; } };'
-//  }
+// object_expr_getter : {
+// source : 'var a; var b = { x: 123, get xplus() { return this.x + 1; } };'
+// }
 };
 
 var testcase_jsthis = {
@@ -736,8 +749,8 @@ var TESTS = {
   control : testcase_control,
   object : testcase_object,
   global : testcase_global,
-//  exception : testcase_exception,
-//  internal : testcase_internal,
+// exception : testcase_exception,
+// internal : testcase_internal,
 // jsthis : testcase_jsthis,
 // jsnew : testcase_jsnew,
 };
@@ -824,13 +837,13 @@ function emit_as_tcp_client(testcase) {
 }
 
 function run_test262() {
-  
+
   console.log("Dir path : " + LANGUAGE_TYPES_BOOLEAN);
 
   var dir = LANGUAGE_TYPES_BOOLEAN;
 
   fs.readdir(dir, function(err, files) {
-    
+
     function readFileCallback(err, data) {
       if (err) {
         throw err;
@@ -842,7 +855,7 @@ function run_test262() {
     }
 
     for (var i = 0; i < files.length; i++) {
-      
+
       console.log(files[i]);
 
       var fpath = dir + files[i];
@@ -851,10 +864,9 @@ function run_test262() {
   });
 }
 
-run_testsuite(TESTS);
-// run_single_in_suite(TESTS, "global", "object_proto_dummy");
-
-
+// run_testsuite(TESTS);
+// run_single_in_suite(TESTS, "boolean", "triple_equal_literal_false");
+run_test262();
 
 // emit_as_tcp_client(TESTS["basic"]["var_declare_dual"]);
 

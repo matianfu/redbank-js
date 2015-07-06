@@ -256,12 +256,10 @@ FunctionNode.prototype.emitJUMP = function(to) {
 /**
  * conditional jump
  * 
- * @param t
- *          label for true
  * @param f
- *          label for false
+ *          label for false block
  */
-FunctionNode.prototype.emitJUMPC = function(t, f) {
+FunctionNode.prototype.emitJUMPC = function(f) {
   this.emit("JUMPC", f);
 };
 
@@ -752,6 +750,10 @@ FunctionNode.prototype.compileAST = function(ast, silent) {
   case "TryStatement":
     this.compileTryStatement(ast);
     break;
+    
+  case "UnaryExpression":
+    this.compileUnaryExpression(ast);
+    break;
 
   case "VariableDeclaration":
     this.compileVariableDeclaration(ast);
@@ -818,9 +820,9 @@ FunctionNode.prototype.compileCallExpression = function(ast) {
   this.emit("CALLEX");
 
   // put this as global
-//  if (ast.callee.type !== 'MemberExpression') {
-//    this.emit("LITG");
-//  }
+  // if (ast.callee.type !== 'MemberExpression') {
+  // this.emit("LITG");
+  // }
 
   // put arguments
   for (var i = 0; i < ast.arguments.length; i++) {
@@ -1054,19 +1056,20 @@ FunctionNode.prototype.compileLiteral = function(ast) {
 // computed: boolean;
 // }
 FunctionNode.prototype.compileMemberExpression = function(ast) {
-  
+
   this.compileAST(ast.object);
   this.emit("GETVAL");
   this.compileAST(ast.property);
   this.emit("GETVAL");
   this.emit("MEMEX");
 
-//  if (ast.__parent__.type === 'CallExpression' && ast === ast.__parent__.callee) {
-//    this.emit("FETCHOF");
-//  }
-//  else if (exprAsVal(ast)) {
-//    this.emit("FETCHO");
-//  }
+  // if (ast.__parent__.type === 'CallExpression' && ast ===
+  // ast.__parent__.callee) {
+  // this.emit("FETCHOF");
+  // }
+  // else if (exprAsVal(ast)) {
+  // this.emit("FETCHO");
+  // }
 };
 
 // interface NewExpression <: Expression {
@@ -1109,12 +1112,8 @@ FunctionNode.prototype.compileProgram = function(ast) {
 /**
  * Property interface only occurs in 'ObjectExpression' as 'properties'
  * 
- * interface Property <: Node {
- *   type: "Property";
- *   key: Literal | Identifier;
- *   value: Expression;
- *   kind: "init" | "get" | "set";
- * }
+ * interface Property <: Node { type: "Property"; key: Literal | Identifier;
+ * value: Expression; kind: "init" | "get" | "set"; }
  * 
  * @param ast
  */
@@ -1201,6 +1200,23 @@ FunctionNode.prototype.compileTryStatement = function(ast) {
   }
 };
 
+// interface UnaryExpression <: Expression {
+// type: "UnaryExpression";
+// operator: UnaryOperator;
+// prefix: boolean;
+// argument: Expression;
+// }
+FunctionNode.prototype.compileUnaryExpression = function(ast) {
+  
+  this.compileAST(ast.argument);
+  if (ast.operator === "typeof") {
+    this.emit("TYPEOF");
+  }
+  else {
+    throw "not supported yet";
+  }
+};
+
 // interface VariableDeclaration <: Declaration {
 // type: "VariableDeclaration";
 // declarations: [ VariableDeclarator ];
@@ -1255,7 +1271,7 @@ FunctionNode.prototype.compileWhileStatement = function(ast) {
 
   this.emitLabel(begin);
   this.compileAST(ast.test);
-  this.emitJUMPC(t, after);
+  this.emitJUMPC(after);
 
   this.emitLabel(t);
   this.compileAST(ast.body);
