@@ -1,5 +1,173 @@
 'use strict';
 
+/******************************************************************************
+11 Expressions
+11.1 Primary Expressions
+11.1.1 The this Keyword
+11.1.2 Identifier Reference
+11.1.3 Literal Reference
+11.1.4 Array Initialiser
+11.1.5 Object Initialiser
+11.1.6 The Grouping Operator
+11.2 Left-Hand-Side Expressions
+11.2.1 Property Accessors
+11.2.2 The new Operator
+11.2.3 Function Calls
+11.2.4 Argument Lists
+11.2.5 Function Expressions
+11.3 Postfix Expressions
+11.3.1 Postfix Increment Operator
+11.3.2 Postfix Decrement Operator
+11.4 Unary Operators
+11.4.1 The delete Operator
+11.4.2 The void Operator
+11.4.3 The typeof Operator
+11.4.4 Prefix Increment Operator
+11.4.5 Prefix Decrement Operator
+11.4.6 Unary + Operator
+11.4.7 Unary - Operator
+11.4.8 Bitwise NOT Operator ( ~ )
+11.4.9 Logical NOT Operator ( ! )
+11.5 Multiplicative Operators
+11.5.1 Applying the * Operator
+11.5.2 Applying the / Operator
+11.5.3 Applying the % Operator
+11.6 Additive Operators
+11.6.1 The Addition operator ( + )
+11.6.2 The Subtraction Operator ( - )
+11.6.3 Applying the Additive Operators to Numbers
+11.7 Bitwise Shift Operators
+11.7.1 The Left Shift Operator ( << )
+11.7.2 The Signed Right Shift Operator ( >> )
+11.7.3 The Unsigned Right Shift Operator ( >>> )
+11.8 Relational Operators
+11.8.1 The Less-than Operator ( < )
+11.8.2 The Greater-than Operator ( > )
+11.8.3 The Less-than-or-equal Operator ( <= )
+11.8.4 The Greater-than-or-equal Operator ( >= )
+11.8.5 The Abstract Relational Comparison Algorithm
+11.8.6 The instanceof operator
+11.8.7 The in operator
+11.9 Equality Operators
+11.9.1 The Equals Operator ( == )
+11.9.2 The Does-not-equals Operator ( != )
+11.9.3 The Abstract Equality Comparison Algorithm
+11.9.4 The Strict Equals Operator ( === )
+11.9.5 The Strict Does-not-equal Operator ( !== )
+11.9.6 The Strict Equality Comparison Algorithm
+11.10 Binary Bitwise Operators
+11.11 Binary Logical Operators
+11.12 Conditional Operator ( ? : )
+11.13 Assignment Operators
+11.13.1 Simple Assignment ( = )
+11.13.2 Compound Assignment ( op= )
+11.14 Comma Operator ( , )
+12 Statements
+12.1 Block
+12.2 Variable Statement
+12.2.1 Strict Mode Restrictions
+12.3 Empty Statement
+12.4 Expression Statement
+12.5 The if Statement
+12.6 Iteration Statements
+12.6.1 The do-while Statement
+12.6.2 The while Statement
+12.6.3 The for Statement
+12.6.4 The for-in Statement
+12.7 The continue Statement
+12.8 The break Statement
+12.9 The return Statement
+12.10 The with Statement
+12.10.1 Strict Mode Restrictions
+12.11 The switch Statement
+12.12 Labelled Statements
+12.13 The throw Statement
+12.14 The try Statement
+12.14.1 Strict Mode Restrictions
+12.15 The debugger statement
+13 Function Definition
+13.1 Strict Mode Restrictions
+13.2 Creating Function Objects
+13.2.1 [[Call]]
+13.2.2 [[Construct]]
+13.2.3 The [[ThrowTypeError]] Function Object
+14 Program
+14.1 Directive Prologues and the Use Strict Directive
+15 Standard Built-in ECMAScript Objects
+15.1 The Global Object
+15.1.1 Value Properties of the Global Object
+15.1.2 Function Properties of the Global Object
+15.1.3 URI Handling Function Properties
+15.1.4 Constructor Properties of the Global Object
+15.1.5 Other Properties of the Global Object
+15.2 Object Objects
+15.2.1 The Object Constructor Called as a Function
+15.2.2 The Object Constructor
+15.2.3 Properties of the Object Constructor
+15.2.4 Properties of the Object Prototype Object
+15.2.5 Properties of Object Instances
+15.3 Function Objects
+15.3.1 The Function Constructor Called as a Function
+15.3.2 The Function Constructor
+15.3.3 Properties of the Function Constructor
+15.3.4 Properties of the Function Prototype Object
+15.3.5 Properties of Function Instances
+15.4 Array Objects
+15.4.1 The Array Constructor Called as a Function
+15.4.2 The Array Constructor
+15.4.3 Properties of the Array Constructor
+15.4.4 Properties of the Array Prototype Object
+15.4.5 Properties of Array Instances
+15.5 String Objects
+15.5.1 The String Constructor Called as a Function
+15.5.2 The String Constructor
+15.5.3 Properties of the String Constructor
+15.5.4 Properties of the String Prototype Object
+15.5.5 Properties of String Instances
+15.6 Boolean Objects
+15.6.1 The Boolean Constructor Called as a Function
+15.6.2 The Boolean Constructor
+15.6.3 Properties of the Boolean Constructor
+15.6.4 Properties of the Boolean Prototype Object
+15.6.5 Properties of Boolean Instances
+15.7 Number Objects
+15.7.1 The Number Constructor Called as a Function
+15.7.2 The Number Constructor
+15.7.3 Properties of the Number Constructor
+15.7.4 Properties of the Number Prototype Object
+15.7.5 Properties of Number Instances
+15.8 The Math Object
+15.8.1 Value Properties of the Math Object
+15.8.2 Function Properties of the Math Object
+15.9 Date Objects
+15.9.1 Overview of Date Objects and Definitions of Abstract Operators
+15.9.2 The Date Constructor Called as a Function
+15.9.3 The Date Constructor
+15.9.4 Properties of the Date Constructor
+15.9.5 Properties of the Date Prototype Object
+15.9.6 Properties of Date Instances
+15.10 RegExp (Regular Expression) Objects
+15.10.1 Patterns
+15.10.2 Pattern Semantics
+15.10.3 The RegExp Constructor Called as a Function
+15.10.4 The RegExp Constructor
+15.10.5 Properties of the RegExp Constructor
+15.10.6 Properties of the RegExp Prototype Object
+15.10.7 Properties of RegExp Instances
+15.11 Error Objects
+15.11.1 The Error Constructor Called as a Function
+15.11.2 The Error Constructor
+15.11.3 Properties of the Error Constructor
+15.11.4 Properties of the Error Prototype Object
+15.11.5 Properties of Error Instances
+15.11.6 Native Error Types Used in This Standard
+15.11.7 NativeError Object Structure
+15.12 The JSON Object
+15.12.1 The JSON Grammar
+15.12.2 parse ( text [ , reviver ] )
+15.12.3 stringify ( value [ , replacer [ , space ] ] )
+ */
+
 var Common = require('./common.js');
 
 var USE_RB_TEST = true;
@@ -90,6 +258,9 @@ function exprAsVal(expr) {
   }
   else if (pt === "Property") {
 
+  }
+  else if (pt === "NewExpression") {
+    
   }
   else {
     console.log("exprAsVal: " + pt + " not supported yet");
@@ -702,6 +873,10 @@ FunctionNode.prototype.compileAST = function(ast, silent) {
   case "ExpressionStatement":
     this.compileExpressionStatement(ast);
     break;
+    
+  case "ForStatement":
+    this.compileForStatement(ast);
+    break;
 
   case "FunctionExpression":
     this.compileFunctionExpression(ast);
@@ -721,6 +896,10 @@ FunctionNode.prototype.compileAST = function(ast, silent) {
 
   case "MemberExpression":
     this.compileMemberExpression(ast);
+    break;
+    
+  case "NewExpression":
+    this.compileNewExpression(ast);
     break;
 
   case "ObjectExpression":
@@ -754,6 +933,10 @@ FunctionNode.prototype.compileAST = function(ast, silent) {
   case "UnaryExpression":
     this.compileUnaryExpression(ast);
     break;
+    
+  case "UpdateExpression":
+    this.compileUpdateExpression(ast);
+    break;
 
   case "VariableDeclaration":
     this.compileVariableDeclaration(ast);
@@ -781,7 +964,9 @@ FunctionNode.prototype.compileAST = function(ast, silent) {
 FunctionNode.prototype.compileBinaryExpression = function(ast) {
 
   this.compileAST(ast.left);
+  this.emit("GETVAL");
   this.compileAST(ast.right);
+  this.emit("GETVAL");
   this.emit("BINOP", ast.operator);
   return;
 };
@@ -815,18 +1000,16 @@ FunctionNode.prototype.compileCallExpression = function(ast) {
     return;
   }
 
-  // put callee, may evaluate to lvalue TODO
+  /**
+   * 11.2.3 callee is left-hand-side
+   */
   this.compileAST(ast.callee);
-  this.emit("CALLEX");
-
-  // put this as global
-  // if (ast.callee.type !== 'MemberExpression') {
-  // this.emit("LITG");
-  // }
+  this.emit("CALLEXP");
 
   // put arguments
   for (var i = 0; i < ast.arguments.length; i++) {
     this.compileAST(ast.arguments[i]);
+    this.emit("GETVAL");
   }
 
   // put argc
@@ -867,7 +1050,7 @@ FunctionNode.prototype.compileForStatement = function(ast) {
 
   var test = this.compiler.newLabel();
   var after = this.compiler.newLabel();
-  var t = this.compiler.newLabel();
+  // var t = this.compiler.newLabel();
   var cont = this.compiler.newLabel();
 
   // do init first
@@ -970,9 +1153,9 @@ FunctionNode.prototype.compileIdentifier = function(ast) {
 
         this.emit('LITA', 'CATCH', depth);
 
-        if (exprAsVal(ast)) {
-          this.emit('FETCHA');
-        }
+//        if (exprAsVal(ast)) {
+//          this.emit('FETCHA');
+//        }
         return;
       }
       depth++;
@@ -1009,9 +1192,9 @@ FunctionNode.prototype.compileIdentifier = function(ast) {
     }
   }
 
-  if (exprAsVal(ast)) {
-    this.emit("FETCHA");
-  }
+//  if (exprAsVal(ast)) {
+//    this.emit("FETCHA");
+//  }
 };
 
 // interface IfStatement <: Statement {
@@ -1061,15 +1244,7 @@ FunctionNode.prototype.compileMemberExpression = function(ast) {
   this.emit("GETVAL");
   this.compileAST(ast.property);
   this.emit("GETVAL");
-  this.emit("MEMEX");
-
-  // if (ast.__parent__.type === 'CallExpression' && ast ===
-  // ast.__parent__.callee) {
-  // this.emit("FETCHOF");
-  // }
-  // else if (exprAsVal(ast)) {
-  // this.emit("FETCHO");
-  // }
+  this.emit("MEMEXP");
 };
 
 // interface NewExpression <: Expression {
@@ -1078,11 +1253,15 @@ FunctionNode.prototype.compileMemberExpression = function(ast) {
 // arguments: [ Expression ];
 // }
 FunctionNode.prototype.compileNewExpression = function(ast) {
-  // put arguments
-  // put function
-  // put "prototype" property
-  // load
-  // 
+  
+  this.compileAST(ast.callee);
+  this.emit("GETVAL");
+  this.emit("LITN", 1);
+  for (var i = 0; i < ast.arguments.length; i++) {
+    this.compileAST(ast.arguments[i]);
+  }
+  this.emit("LITC", ast.arguments.length);
+  this.emit("NEWEXP");
 };
 
 // interface ObjectExpression <: Expression {
@@ -1146,6 +1325,7 @@ FunctionNode.prototype.compileReturnStatement = function(ast) {
   }
   else {
     this.compileAST(ast.argument);
+    this.emit("GETVAL");
     this.emit("RET", "RESULT");
   }
 };
@@ -1212,9 +1392,26 @@ FunctionNode.prototype.compileUnaryExpression = function(ast) {
   if (ast.operator === "typeof") {
     this.emit("TYPEOF");
   }
+  else if (ast.operator === '!') {
+    this.emit("UNAOP", ast.operator);
+  }
   else {
     throw "not supported yet";
   }
+};
+
+// interface UpdateExpression <: Expression {
+// type: "UpdateExpression";
+// operator: UpdateOperator;
+// argument: Expression;
+// prefix: boolean;
+// }
+FunctionNode.prototype.compileUpdateExpression = function(ast) {
+  /**
+   * expression must be left hand side
+   */
+  this.compileAST(ast.argument);
+  this.emit("UPDATE", ast.operator, ast.prefix);
 };
 
 // interface VariableDeclaration <: Declaration {

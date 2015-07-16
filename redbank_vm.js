@@ -504,6 +504,20 @@ function set(id, object, member) {
 
 /**
  * 
+ * @param id
+ * @param object
+ * @param member
+ */
+function unset(id, object, member) {
+
+  if (type === VECTOR_TYPE) {
+
+  }
+  throw "now supported yet";
+}
+
+/**
+ * 
  * @param string
  * @returns
  */
@@ -958,6 +972,7 @@ var CH_08_07_01_GET_VALUE;
  * 8.7.1 GetValue (V)
  * 
  * This is a stack function. V is supposed to be TOS and replaced by result.
+ * This will simplified stack operations.
  * 
  * FORTH NOTATION: V -- V, or RefType -- result
  * 
@@ -970,25 +985,30 @@ function GetValue() {
   var E;
   var id = MACHINE.TOS();
 
+  if (typeOfObject(id) === ADDR_TYPE) {
+    MACHINE.fetcha();
+    return;
+  }
+
   // if TOS not ref, do nothing
   if (typeOfObject(id) !== REFERENCE_TYPE) {
     assert(IsEcmaLangType(getObject(id)));
     return ERR_NONE;
   }
 
-  var R = getObject(id);
-  var O = R.GetBase();
-  var P = R.GetReferencedName();
+  var RObj = getObject(id);
+  var O = RObj.GetBase();
+  var P = RObj.GetReferencedName();
 
   // if unresolvable, throw reference error
-  if (R.IsUnresolvableReference() === true) {
+  if (RObj.IsUnresolvableReference() === true) {
     return ERR_REFERENCE_ERROR;
   }
 
-  if (R.IsPropertyReference()) {
-    if (R.HasPrimitiveBase() === false) {
+  if (RObj.IsPropertyReference()) {
+    if (RObj.HasPrimitiveBase() === false) {
       // R -- R V
-      E = OBJECT_GET(O, P);
+      E = GET(O, P);
       if (E < 0) {
         return E;
       }
@@ -1009,7 +1029,7 @@ function GetValue() {
       // update O
       O = MACHINE.TOS();
 
-      var prop = OBJECT_GET_PROPERTY(O, P);
+      var prop = GET_PROPERTY(O, P);
       if (prop === 0) {
         MACHINE.pop();
         MACHINE.setTop(JS_UNDEFINED);
@@ -1032,7 +1052,7 @@ function GetValue() {
         // R O2 -- R O2 GETTER
         MACHINE.push(propObj.GETTER);
         // R O2 -- R O2 RET
-        E = FUNCTION_CALL();
+        E = FUNCTION_CALL(propObj.GETTER, O);
         if (E) {
           return E;
         }
@@ -1371,6 +1391,12 @@ propertyProto.isDataProperty = function() {
   return (this.VALUE !== 0) ? true : false;
 };
 
+/**
+ * Tell if the given (redbank specific) property object is an accessor property
+ * 
+ * @param prop
+ * @returns
+ */
 function IsAccessorProperty(prop) {
 
   if (prop === 0) {
@@ -1611,7 +1637,7 @@ var CH_08_12_01;
  * @param P
  * @returns
  */
-function OBJECT_GET_OWN_PROPERTY(O, P) {
+function GET_OWN_PROPERTY(O, P) {
 
   assert(typeOfObject(O) === OBJECT_TYPE);
   assert(typeOfObject(P) === STRING_TYPE);
@@ -1632,9 +1658,9 @@ var CH_08_12_02;
  * This function recursively find property with given name along prototype
  * chain.
  */
-function OBJECT_GET_PROPERTY(O, P) {
+function GET_PROPERTY(O, P) {
 
-  var prop = OBJECT_GET_OWN_PROPERTY(O, P);
+  var prop = GET_OWN_PROPERTY(O, P);
   if (prop !== 0) {
     return prop;
   }
@@ -1644,7 +1670,7 @@ function OBJECT_GET_PROPERTY(O, P) {
     return 0;
   }
 
-  return OBJECT_GET_OWN_PROPERTY(proto, P);
+  return GET_OWN_PROPERTY(proto, P);
 }
 
 var CH_08_12_03;
@@ -1652,38 +1678,35 @@ var CH_08_12_03;
 /**
  * 8.12.3 [[Get]] (P)
  * 
- * This is a modified version of ecma specification.
+ * This function puts object on stack, something like:
  * 
- * This is a stack function. -- V
+ * -- V
  * 
- * Consider this function as creating a new value. Don't use R -- V as
- * definition, it is the job of GetValue. If GET is defined as R -- V, then in
- * caller, it is hard to decide the strict parameter.
+ * and return if success; otherwise, stack intact and return error number.
+ * 
+ * @return error
  */
-function OBJECT_GET(O, P) {
+function GET(O, P) {
 
-  var prop = OBJECT_GET_PROPERTY(O, P);
+  var prop = GET_PROPERTY(O, P);
   if (prop === 0) {
-    MACHINE.push(JS_UNDEFINED);
+    MACHINE.push(JS_UNDEFINED); // -- undefined
   }
   else if (IsDataProperty(prop)) {
-    MACHINE.push(getObject(prop).VALUE);
+    MACHINE.push(getObject(prop).VALUE); // -- V
   }
   else if (getObject(prop).GETTER === 0) {
-    MACHINE.push(JS_UNDEFINED);
+    MACHINE.push(JS_UNDEFINED); // -- undefined
   }
   else {
-    // -- F
-    MACHINE.push(getObject(prop).GETTER);
-
-    // F -- RET as V
-    var E = FUNCTION_CALL(O);
+    // -- V
+    var E = FUNCTION_CALL(getObject(prop).GETTER, O);
     if (E) {
       return E;
     }
   }
 
-  return ERR_NONE;
+  return ERR_NONE; // -- undefined or V
 }
 
 var CH_08_12_04;
@@ -1691,13 +1714,13 @@ var CH_08_12_04;
 /**
  * 8.12.4 [[CanPut]] (P)
  * 
- * This function returns true of false, which is the value in host space.
+ * This function returns true or false, which are the host value.
  */
 function OBJECT_CAN_PUT(O, P) {
-  var prop = OBJECT_GET_OWN_PROPERTY(O, P);
+  var prop = GET_OWN_PROPERTY(O, P);
   if (prop !== 0) {
     var propObj = getObject(prop);
-    if (IsAccessorProperty(propObj)) {
+    if (IsAccessorProperty(prop)) {
       return (propObj.SETTER !== 0) ? true : false;
     }
     else {
@@ -1710,7 +1733,7 @@ function OBJECT_CAN_PUT(O, P) {
     return getObject(O).EXTENSIBLE;
   }
 
-  var inherited = OBJECT_GET_PROPERTY(proto, P);
+  var inherited = GET_PROPERTY(proto, P);
   if (inherited === 0) {
     return getObject(O).EXTENSIBLE;
   }
@@ -1747,7 +1770,7 @@ function OBJECT_PUT(O, P, V, Throw) {
     return Throw ? ERR_TYPE_ERROR : ERR_NONE;
   }
 
-  var prop = OBJECT_GET_OWN_PROPERTY(O, P);
+  var prop = GET_OWN_PROPERTY(O, P);
   if (IsDataProperty(prop) === true) {
     var valueDesc = newPropertyDescriptor();
     valueDesc.VALUE = V;
@@ -1755,7 +1778,7 @@ function OBJECT_PUT(O, P, V, Throw) {
     return OBJECT_DEFINE_OWN_PROPERTY(O, P, valueDesc, Throw);
   }
 
-  prop = OBJECT_GET_PROPERTY(O, P);
+  prop = GET_PROPERTY(O, P);
   if (IsAccessorProperty(prop) === true) {
     var setter = getObject(prop).SETTER;
     MACHINE.push(setter);
@@ -1781,7 +1804,7 @@ var CH_08_12_06;
  */
 function OBJECT_HAS_PROPERTY(O, P) {
 
-  var prop = OBJECT_GET_PROPERTY(O, P);
+  var prop = GET_PROPERTY(O, P);
   return (prop !== 0) ? true : false;
 }
 
@@ -1792,7 +1815,7 @@ var CH_08_12_07;
  */
 function OBJECT_DELETE(O, P, Throw) {
 
-  var prop = OBJECT_GET_OWN_PROPERTY(O, P);
+  var prop = GET_OWN_PROPERTY(O, P);
   if (prop === 0) {
     return true;
   }
@@ -1810,65 +1833,56 @@ var CH_08_12_08;
 /**
  * 8.12.8 [[DefaultValue]] (hint)
  * 
- * This is a stack function. -- V (primitive)
+ * -- V (primitive)
  * 
  * DefaultValue is only used in ToPrimitive
  * 
  */
 function OBJECT_DEFAULT_VALUE(O, hint) {
 
-  var P, E;
+  var P, F, E;
   if (hint === STRING_TYPE) {
 
-    // 1. Let toString be the result of calling the [[Get]] internal method of
-    // object O with argument "toString".
-    // 2. If IsCallable(toString) is true then,
-    // a. Let str be the result of calling the [[Call]] internal method of
-    // toString, with O as the this value and an empty argument list.
-    // b. If str is a primitive value, return str.
-    // 3. Let valueOf be the result of calling the [[Get]] internal method of
-    // object O with argument "valueOf".
-    // 4. If IsCallable(valueOf) is true then,
-    // a. Let val be the result of calling the [[Call]] internal method of
-    // valueOf,
-    // with O as the this value and an empty argument list.
-    // b. If val is a primitive value, return val.
-    // 5. Throw a TypeError exception.
-
     P = internFindConstantString("toString");
-    // -- F
-    E = OBJECT_GET(O, P);
+    E = GET(O, P); // -- F
     if (E < 0) {
       return E;
     }
 
-    if (IsCallable(MACHINE.TOS()) === true) {
+    F = MACHINE.TOS();
+    MACHINE.pop(); // F --
 
-      E = FUNCTION_CALL(O); // F -- RET
+    if (IsCallable(F) === true) {
+
+      E = FUNCTION_CALL(F, O); // -- RET
       if (E < 0) {
         return E;
       }
+
       if (IsPrimitive(getObject(MACHINE.TOS()))) {
-        return ERR_NONE;
+        return ERR_NONE; // RET on top
       }
-      MACHINE.pop(); // result --
+      MACHINE.pop(); // RET --
     }
 
     P = internFindConstantString("valueOf");
-    E = OBJECT_GET(O, P);
+    E = GET(O, P); // -- F
     if (E < 0) {
       return E;
     }
 
-    if (IsCallable(MACHINE.TOS()) === true) {
-      E = FUNCTION_CALL(O); // F -- RET
+    F = MACHINE.TOS();
+    MACHINE.pop(); // F --
+    if (IsCallable(F) === true) {
+      E = FUNCTION_CALL(F, O); // -- RET 
       if (E < 0) {
         return E;
       }
+
       if (IsPrimitive(getObject(MACHINE.TOS()))) {
-        return ERR_NONE; // val
+        return ERR_NONE; // RET on top
       }
-      MACHINE.pop(); // 
+      MACHINE.pop(); // RET --
     }
     return ERR_TYPE_ERROR;
   }
@@ -1894,7 +1908,7 @@ function OBJECT_DEFINE_OWN_PROPERTY(O, P, Desc, Throw) {
 
   assert(typeof Throw === 'boolean');
 
-  var current = OBJECT_GET_OWN_PROPERTY(O, P);
+  var current = GET_OWN_PROPERTY(O, P);
   var currObj = (current === 0) ? undefined : getObject(current);
   var extensible = getObject(O).EXTENSIBLE;
   var prop;
@@ -2223,7 +2237,7 @@ function ToBoolean() {
   var input = MACHINE.TOS();
   var obj = getObject(input);
 
-  assert(obj.isEcmaLangType());
+  assert(IsEcmaLangType(obj));
 
   if (input === JS_UNDEFINED || input === JS_NULL) {
     MACHINE.setTop(JS_FALSE);
@@ -2868,6 +2882,24 @@ function TypeOfOperator() {
   MACHINE.setTop(createString(str));
 }
 
+var CH_11_04_09_LOGICAL_NOT_OPERATOR;
+/**
+ * 11.4.9 Logical NOT Operator ( ! )
+ * 
+ * This is a stack function
+ */
+function LogicalNotOperator() {
+  GetValue();
+  ToBoolean();
+
+  if (MACHINE.TOS() === JS_TRUE) {
+    MACHINE.setTop(JS_FALSE);
+  }
+  else {
+    MACHINE.setTop(JS_TRUE);
+  }
+}
+
 var CH_11_05_MULTIPLICATIVE_OPERATORS;
 /**
  * 11.5 Multiplicative Operators
@@ -2887,7 +2919,6 @@ var CH_11_08_RELATIONAL_OPERATORS;
 /**
  * 11.8 Relational Operators
  */
-
 
 /**
  * 11.9.1 The Equals Operator ( == )
@@ -2912,7 +2943,8 @@ var CH_11_09_03;
  * 11.9.3 The Abstract Equality Comparison Algorithm
  * 
  * This function use stack, but it is not necessarily a stack function, since it
- * only returns a host value. This is true if no function call throws error. TODO
+ * only returns a host value. This is true if no function call throws error.
+ * TODO
  */
 function AbstractEqualityComparison(x, y) {
 
@@ -3108,17 +3140,6 @@ var CH_13_02_CREATING_FUNCTION_OBJECTS;
 
 var functionProto = Object.create(objectProto);
 
-/**
- * 13.2.1 [[Call]]
- * 
- * This is stack function.
- * 
- * STACK : F -- result
- * 
- * It implements the callee's job. The caller is responsilbe to prepare the
- * stack according to calling convention. There is no difference between native
- * and host function.
- */
 functionProto.CALL = function(__VA_ARGS__) {
 
   // at least, thisArg should be provided
@@ -3157,43 +3178,47 @@ functionProto.CALL = function(__VA_ARGS__) {
   // return obj;
 };
 
+var CH_13_02_01_CALL;
 /**
+ * 13.2.1 [[Call]]
+ * 
  * This is a modified version of [[Call]]
  * 
- * This is a stack operation.
+ * This is stack function.
  * 
- * STACK: FUNC -- RET
+ * STACK : F -- result
  * 
- * @param __VA_ARGS__
- *          thisArgs and arglists
- * 
+ * It implements the callee's job. The caller is responsilbe to prepare the
+ * stack according to calling convention. There is no difference between native
+ * and host function.
  */
-function FUNCTION_CALL(__VA_ARGS__) {
+function FUNCTION_CALL(F, thisArg, __VA_ARGS__) {
 
-  var F = MACHINE.TOS();
   assertClass(F, FUNCTION_CLASS);
+  assert(arguments.length > 1);
 
   var FObj = getObject(F);
 
   if (FObj.nativeFunc !== undefined) {
-    var thisArg = arguments[0];
     // use splice to get all the arguments after thisArg;
-    var args = Array.prototype.splice.call(arguments, 1);
-    return this.nativeFunc.apply(thisArg, args);
+    var args = Array.prototype.splice.call(arguments, 2);
+    return FObj.nativeFunc.apply(thisArg, args);
   }
 
   /**
    * caller, don't push function object, the caller of this function is
    * responsible to do that
    */
+  // put function object on stack
+  MACHINE.push(F);
   // put 'this' on stack
-  MACHINE.push(arguments[0]);
+  MACHINE.push(thisArg);
   // put arguments
-  for (var i = 1; i < arguments.length; i++) {
+  for (var i = 2; i < arguments.length; i++) {
     MACHINE.push(arguments[i]);
   }
   // put argc on stack
-  MACHINE.push(createNumber(arguments.length - 1));
+  MACHINE.push(createNumber(arguments.length - 2));
 
   /**
    * callee is responsible for cleaning up stacks
@@ -3201,8 +3226,13 @@ function FUNCTION_CALL(__VA_ARGS__) {
   return MACHINE.doCall();
 }
 
-functionProto.CONSTRUCT = function() {
+var CH_13_02_02_CONSTRUCT;
+/**
+ * 
+ */
+function FUNCTION_CONSTRUCT() {
 
+  var id = createObjectObject();
 };
 
 functionProto.HAS_INSTANCE = function() {
@@ -3275,6 +3305,14 @@ RedbankVM.prototype.indexOfARGC = function() {
 
 RedbankVM.prototype.indexOfPARAM = function(index) {
 
+};
+
+RedbankVM.prototype.indexOfTHIS = function() {
+  var index = this.FP; // point to FP
+  index = index - 1; // point to ARGC
+  index = index - this.ARGC(); // point to param[0]
+  index = index - 1; // point to THIS object
+  return index; // TODO quick dirty, refactor
 };
 
 RedbankVM.prototype.indexOfFUNC = function() {
@@ -3449,6 +3487,11 @@ RedbankVM.prototype.pop = function() {
   set(0, MAIN_STACK, this.indexOfTOS());
   mainStackLength--;
 };
+
+/** this is a very special function * */
+RedbankVM.prototype.pluck = function() {
+
+}
 
 // w1 w2 -- w2
 RedbankVM.prototype.nip = function() {
@@ -3732,12 +3775,17 @@ RedbankVM.prototype.printstack = function() {
           break;
         default:
           console.log("unknown object class");
+          throw "error";
         }
         break;
 
       case 'reference':
         console.log(i + " : " + id + " (reference) " + obj.base + " "
             + obj.name);
+        break;
+
+      case 'null':
+        console.log(i + " : " + id + " (null) ");
         break;
 
       default:
@@ -3942,9 +3990,11 @@ RedbankVM.prototype.stepCall = function() {
   this.doReturn();
 };
 
-RedbankVM.prototype.stepCallEx = function() {
+RedbankVM.prototype.stepCallExp = function() {
 
-  if (typeOfObject(this.TOS()) === REFERENCE_TYPE) {
+  var type = typeOfObject(this.TOS());
+
+  if (type === REFERENCE_TYPE) {
 
     var ref = this.TOS();
     var refObj = getObject(ref);
@@ -3970,6 +4020,11 @@ RedbankVM.prototype.stepCallEx = function() {
     this.pop();
   }
   else {
+
+    assert(type === ADDR_TYPE);
+
+    GetValue();
+
     if (typeOfObject(this.TOS()) !== OBJECT_TYPE) {
       return ERR_TYPE_ERROR;
     }
@@ -3980,6 +4035,26 @@ RedbankVM.prototype.stepCallEx = function() {
     // TODO don't know if environment record or ... see 11.2.3
     this.push(JS_GLOBAL);
   }
+};
+
+RedbankVM.prototype.stepNewExp = function() {
+
+  assert(typeOfObject(this.TOS()) === NUMBER_TYPE);
+
+  var argc = getObject(this.TOS()).value;
+  var fIndex = mainStackLength - 1 - argc - 1 - 1;
+  var f = mainStackObj.elem[fIndex];
+
+  if (typeOfObject(f) !== OBJECT_TYPE) {
+    throw "error";
+  }
+
+  // this definition is different from that of ecma spec.
+  if (classOfObject(f) !== FUNCTION_CLASS) {
+    throw "error";
+  }
+
+  FUNCTION_CONSTRUCT(f);
 };
 
 RedbankVM.prototype.stepBinop = function(binop) {
@@ -4059,14 +4134,14 @@ RedbankVM.prototype.stepBinop = function(binop) {
     this.push(strictNotEqual ? JS_TRUE : JS_FALSE);
   }
   else if (binop === '==') {
-    
+
     var equal = EqualsOperator(left, right);
     this.pop();
     this.pop();
     this.push(equal ? JS_TRUE : JS_FALSE);
   }
   else if (binop === '!=') {
-    
+
     var doesNotEqual = DoesNotEqualOperator(left, right);
     this.pop();
     this.pop();
@@ -4098,9 +4173,8 @@ RedbankVM.prototype.step = function(code, bytecode) {
     this.stepCall();
     break;
 
-  case "CALLEX":
-    this.stepCallEx();
-
+  case "CALLEXP":
+    this.stepCallExp();
     break;
 
   case "CAPTURE":
@@ -4111,9 +4185,9 @@ RedbankVM.prototype.step = function(code, bytecode) {
     this.pop();
     break;
 
-  case "FETCHA": // addr -- obj
-    this.fetcha();
-    break;
+  // case "FETCHA": // addr -- obj
+  // this.fetcha();
+  // break;
 
   case "FETCHO": // parent, prop -- value
     this.fetcho();
@@ -4188,6 +4262,9 @@ RedbankVM.prototype.step = function(code, bytecode) {
     else if (typeof val === 'boolean') {
       id = val ? JS_TRUE : JS_FALSE;
     }
+    else if (val === null) {
+      id = JS_NULL;
+    }
     else {
       throw "error";
     }
@@ -4207,12 +4284,16 @@ RedbankVM.prototype.step = function(code, bytecode) {
     this.push(id);
     break;
 
-  case "MEMEX":
+  case "MEMEXP":
     CheckObjectCoercible(this.NOS());
     ToString();
     id = createReferenceType(this.NOS(), this.TOS(), false);
     set(id, MAIN_STACK, this.indexOfNOS());
     this.pop();
+    break;
+
+  case "NEWEXP":
+    this.stepNewExp();
     break;
 
   case 'THROW':
@@ -4251,7 +4332,6 @@ RedbankVM.prototype.step = function(code, bytecode) {
     break;
 
   case "STORE": // addr n1 --
-
     if (typeOfObject(this.NOS()) === 'addr') {
       this.storeOrAssignToAddress('store');
     }
@@ -4292,7 +4372,7 @@ RedbankVM.prototype.step = function(code, bytecode) {
     break;
 
   case "THIS":
-    id = mainStackObj.elem[this.FP - 2];
+    id = mainStackObj.elem[this.indexOfTHIS()];
     this.push(id);
     break;
 
@@ -4300,9 +4380,23 @@ RedbankVM.prototype.step = function(code, bytecode) {
     TypeOfOperator();
     break;
 
+  case "UNAOP":
+    if (bytecode.arg1 === '!') {
+      LogicalNotOperator();
+    }
+    else {
+      throw "not supported yet";
+    }
+    break;
+
   case 'UNTRAP':
     set(0, this.id, 'ErrorStack', this.ErrorStack.length - 1);
     this.ErrorStack.pop();
+    break;
+
+  case 'UPDATE':
+    // 11.3.1 & 11.3.2 no syntax error TODO
+
     break;
 
   case '=':
@@ -4342,8 +4436,7 @@ RedbankVM.prototype.run = function(input, testcase, initmode) {
   MACHINE = this;
 
   var program = createFunction(0, 0, 0);
-  MACHINE.push(program);
-  FUNCTION_CALL(JS_GLOBAL);
+  FUNCTION_CALL(program, JS_GLOBAL);
 
   // this assertion assumes the
   assert(mainStackLength === 1);

@@ -14,8 +14,8 @@ var Compiler = require("./redbank_compiler.js");
 var RedbankVM = require("./redbank_vm.js");
 var Common = require("./common.js");
 
-var TEST262_PATH = "/home/ma/redbank/test262/test/";
-var LANGUAGE_TYPES_BOOLEAN = TEST262_PATH + "language/types/boolean/";
+var TEST262_ROOT = "/home/ma/redbank/test262/test/";
+
 /**
  * constants
  */
@@ -123,14 +123,14 @@ function run_script(source) {
   var ast;
   try {
     ast = Esprima_Main.parse(source);
-  }
-  catch (e) {
+  } catch (e) {
     console.log("Compile Error");
-    return;
+    return false;
   }
   var bytecodes = Compiler.compile(ast);
   var vm = new RedbankVM();
   vm.run(bytecodes);
+  return true;
 }
 
 /**
@@ -642,6 +642,16 @@ var testcase_object = {
 // object_expr_getter : {
 // source : 'var a; var b = { x: 123, get xplus() { return this.x + 1; } };'
 // }
+  
+//  new_expr : {
+//    source : 'var a; var b = function() {};                   '
+//        + 'b.prototype = {x : 1};                             '
+//        + 'var c = new b;'
+//  },
+//  new_mem_expr : {
+//    source : 'var a = { x : function(){this.y = 1},};'
+//        + 'var b = new a.x();                          '
+//  }
 };
 
 var testcase_jsthis = {
@@ -660,15 +670,7 @@ var testcase_jsthis = {
 
 var testcase_jsnew = {
 
-  basic : {
-    source : 'var a; var b = function() {};                   '
-        + 'b.prototype = {x : 1};                             '
-        + 'var c = new b();'
-  },
-  confused : {
-    source : 'var a = { x : function(){this.y = 1},};'
-        + 'var b = new a.x();                          '
-  }
+
 };
 
 var testcase_global = {
@@ -738,8 +740,11 @@ var testcase_future = {
 
 };
 
-var testcase_exception = {
-
+var testcase_ecma = {
+  
+  postfix_increment : {
+    source : 'var a; var b = 137; a = b++;'  
+  },
 };
 
 var TESTS = {
@@ -749,6 +754,7 @@ var TESTS = {
   control : testcase_control,
   object : testcase_object,
   global : testcase_global,
+  ecma : testcase_ecma,
 // exception : testcase_exception,
 // internal : testcase_internal,
 // jsthis : testcase_jsthis,
@@ -836,11 +842,9 @@ function emit_as_tcp_client(testcase) {
   });
 }
 
-function run_test262() {
+function run_test262_dir(dir) {
 
-  console.log("Dir path : " + LANGUAGE_TYPES_BOOLEAN);
-
-  var dir = LANGUAGE_TYPES_BOOLEAN;
+  console.log("Dir path : " + dir);
 
   fs.readdir(dir, function(err, files) {
 
@@ -864,9 +868,35 @@ function run_test262() {
   });
 }
 
-// run_testsuite(TESTS);
-// run_single_in_suite(TESTS, "boolean", "triple_equal_literal_false");
-run_test262();
+function get_test262() {
+
+  var t = [];
+  
+  t.push("language/types/boolean/");
+  // t.push("language/types/list/");
+  t.push("language/types/null/");
+  t.push("language/types/number/");
+//  t.push("language/types/object/");
+//  t.push("language/types/reference/");
+//  t.push("language/types/string/");
+//  t.push("language/types/undefined/");
+  
+  return t;
+}
+
+function run_test262() {
+  
+  var t = get_test262();
+
+  for (var i = 0; i < t.length; i++) {
+    var fullpath = TEST262_ROOT + t[i];
+    run_test262_dir(fullpath);
+  }
+}
+
+run_testsuite(TESTS);
+// run_single_in_suite(TESTS, "jsthis", "basic");
+// run_test262();
 
 // emit_as_tcp_client(TESTS["basic"]["var_declare_dual"]);
 
