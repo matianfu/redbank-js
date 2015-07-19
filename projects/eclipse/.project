@@ -67,5 +67,10 @@
 			<type>1</type>
 			<locationURI>PARENT-2-PROJECT_LOC/test.js</locationURI>
 		</link>
+		<link>
+			<name>testcases.js</name>
+			<type>1</type>
+			<locationURI>PARENT-2-PROJECT_LOC/testcases.js</locationURI>
+		</link>
 	</linkedResources>
 </projectDescription>

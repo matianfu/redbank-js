@@ -97,15 +97,15 @@ function run_case(testcase, opt_logast, opt_logsrc) {
     var ast_json = JSON.stringify(ast, null, 2);
     console.log(ast_json);
   }
-
-  // compile into bytecodes with redbank compiler
-  var bytecodes = Compiler.compile(ast);
-
+  
   if (opt_logsrc === true) {
     console.log(Common.Format.hline);
     console.log(testcase.source);
     console.log(Common.Format.hline);
   }
+
+  // compile into bytecodes with redbank compiler
+  var bytecodes = Compiler.compile(ast);
 
   // run bytecodes with redbank vm
   var vm = new RedbankVM();
@@ -174,7 +174,7 @@ function run_testsuite(testsuite) {
       for ( var testcase in testsuite[group]) {
         if (testsuite[group].hasOwnProperty(testcase)) {
           testcase_count++;
-          run_case(testsuite[group][testcase], false, true);
+          run_case(testsuite[group][testcase], true, true);
         }
       }
     }
@@ -569,7 +569,6 @@ var testcase_boolean = {
   triple_equal_literal_true : {
     source : 'var a = 1 === 1; rb_test("test")',
     test : function(vm) {
-      // assert_stack_slot_boolean_value(vm, 0, true);
       vm.assertStackSlotBooleanValue(0, true);
     }
   },
@@ -577,7 +576,6 @@ var testcase_boolean = {
   triple_equal_literal_false : {
     source : 'var a = 2 === 1; rb_test("test")',
     test : function(vm) {
-      // assert_stack_slot_boolean_value(vm, 0, false);
       vm.assertStackSlotBooleanValue(0, false);
     }
   },
@@ -589,7 +587,6 @@ var testcase_control = {
   if_statement_no_alternative : {
     source : 'var a = 0; var b = 7; if (b === 7) a = 19; rb_test("test");',
     test : function(vm) {
-      // assert_stack_slot_number_value(vm, 0, 19);
       vm.assertStackSlotNumberValue(0, 19);
     }
   },
@@ -666,11 +663,6 @@ var testcase_jsthis = {
       vm.assertStackSlotNumberValue(0, 123);
     }
   }
-};
-
-var testcase_jsnew = {
-
-
 };
 
 var testcase_global = {
@@ -894,7 +886,15 @@ function run_test262() {
   }
 }
 
+var builtin_tests = require("./testcases.js");
+
+// run_single_in_suite(TESTS, "control", "S8_3_A1_T1");
+
 run_testsuite(TESTS);
+// run_testsuite(builtin_tests.TESTS);
+
+
+
 // run_single_in_suite(TESTS, "jsthis", "basic");
 // run_test262();
 

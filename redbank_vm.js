@@ -1,6 +1,6 @@
 /*-*****************************************************************************
  * 
- * Virtual Machine
+ * Virtual Machine (TODO) revamp
  * 
  * 
  * TOS 
@@ -47,10 +47,10 @@
  * NOTE on host function
  * 
  * 1. Use stack top to pass returned native value. This should also be true for
- * ecma defined abstract method. For example, the internal GET method for Object
- * or the CALL method for Function. If stack top is not used for passing return
- * value, there is a danger that the object or the object it refers to, either
- * directly or indirectly, may be removed due to reference counting.
+ * ecma defined abstract method. For example, the internal GET$ method for
+ * Object or the CALL method for Function. If stack top is not used for passing
+ * return value, there is a danger that the object or the object it refers to,
+ * either directly or indirectly, may be removed due to reference counting.
  * 
  * 2. The general rules are:
  * 
@@ -98,6 +98,14 @@ var PROPERTY_DESCRIPTOR_TYPE = 'property descriptor';
 var PROPERTY_IDENTIFIER_TYPE = 'property identifier';
 var LEXICAL_ENVIRONMENT_TYPE = 'lexical environment';
 var ENVIRONMENT_RECORD_TYPE = 'environment record';
+
+var COMPLETION_TYPE_NORMAL = "normal"; // nothing happen
+var COMPLETION_TYPE_BREAK = "break"; // non-local jump but inside function
+var COMPLETION_TYPE_CONTINUE = "continue"; // non-local jump but inside
+// function
+var COMPLETION_TYPE_RETURN = "return"; // function terminate
+var COMPLETION_TYPE_THROW = "throw"; // non-local jump that can be either
+// inside or outside
 
 /**
  * The red bank specific type
@@ -421,7 +429,7 @@ function decr(id, object, member) {
         decr(obj.VALUE, id, 'VALUE'); // recycle child
       }
       if (obj.GETTER) {
-        decr(obj.GET, id, 'GET');
+        decr(obj.GET$, id, 'GET$');
       }
       if (obj.SETTER) {
         decr(obj.SET, id, 'SET');
@@ -740,6 +748,10 @@ function IsReferenceType(V) {
   return (V.type === REFERENCE_TYPE) ? true : false;
 }
 
+function IsCompletionType(V) {
+  return (V.type === COMPLETION_TYPE) ? true : false;
+}
+
 function IsEcmaType(V) {
   throw "who is using this?";
 }
@@ -1008,7 +1020,7 @@ function GetValue() {
   if (RObj.IsPropertyReference()) {
     if (RObj.HasPrimitiveBase() === false) {
       // R -- R V
-      E = GET(O, P);
+      E = GET$(O, P);
       if (E < 0) {
         return E;
       }
@@ -1126,8 +1138,8 @@ var propertyDescriptorProto = Object.create(typeProto);
  * 
  * Logically, this type has six data fields, in which:
  * 
- * GET, SET, and VALUE maps to redbank-js value space, that is, 0 for undefined,
- * positive integer for object heap id.
+ * GET$, SET, and VALUE maps to redbank-js value space, that is, 0 for
+ * undefined, positive integer for object heap id.
  * 
  * WRITABLE, ENUMERABLE, CONFIGURABLE, are host js boolean values.
  */
@@ -1678,15 +1690,13 @@ var CH_08_12_03;
 /**
  * 8.12.3 [[Get]] (P)
  * 
- * This function puts object on stack, something like:
- * 
- * -- V
+ * This function puts object on stack, something like: -- V
  * 
  * and return if success; otherwise, stack intact and return error number.
  * 
  * @return error
  */
-function GET(O, P) {
+function GET$(O, P) {
 
   var prop = GET_PROPERTY(O, P);
   if (prop === 0) {
@@ -1716,7 +1726,7 @@ var CH_08_12_04;
  * 
  * This function returns true or false, which are the host value.
  */
-function OBJECT_CAN_PUT(O, P) {
+function CAN_PUT(O, P) {
   var prop = GET_OWN_PROPERTY(O, P);
   if (prop !== 0) {
     var propObj = getObject(prop);
@@ -1766,7 +1776,7 @@ function OBJECT_PUT(O, P, V, Throw) {
   assert(typeOfObject(P) === STRING_TYPE);
   assert(typeof Throw === 'boolean');
 
-  if (OBJECT_CAN_PUT(O, P) === false) {
+  if (CAN_PUT(O, P) === false) {
     return Throw ? ERR_TYPE_ERROR : ERR_NONE;
   }
 
@@ -1831,20 +1841,21 @@ function OBJECT_DELETE(O, P, Throw) {
 var CH_08_12_08;
 
 /**
- * 8.12.8 [[DefaultValue]] (hint)
- * 
- * -- V (primitive)
+ * 8.12.8 [[DefaultValue]] (hint) -- V (primitive)
  * 
  * DefaultValue is only used in ToPrimitive
  * 
  */
-function OBJECT_DEFAULT_VALUE(O, hint) {
+function DEFAULT_VALUE(O, hint) {
 
+  /**
+   * P for property, F for function object, and E for error
+   */
   var P, F, E;
   if (hint === STRING_TYPE) {
 
     P = internFindConstantString("toString");
-    E = GET(O, P); // -- F
+    E = GET$(O, P); // -- F
     if (E < 0) {
       return E;
     }
@@ -1866,7 +1877,7 @@ function OBJECT_DEFAULT_VALUE(O, hint) {
     }
 
     P = internFindConstantString("valueOf");
-    E = GET(O, P); // -- F
+    E = GET$(O, P); // -- F
     if (E < 0) {
       return E;
     }
@@ -1874,7 +1885,7 @@ function OBJECT_DEFAULT_VALUE(O, hint) {
     F = MACHINE.TOS();
     MACHINE.pop(); // F --
     if (IsCallable(F) === true) {
-      E = FUNCTION_CALL(F, O); // -- RET 
+      E = FUNCTION_CALL(F, O); // -- RET
       if (E < 0) {
         return E;
       }
@@ -1992,7 +2003,7 @@ function OBJECT_DEFINE_OWN_PROPERTY(O, P, Desc, Throw) {
   /**
    * 5. Return true, if every field in Desc is absent.
    */
-  if (Desc.GET === 0 && Desc.SET === 0 && Desc.VALUE === 0
+  if (Desc.GET$ === 0 && Desc.SET === 0 && Desc.VALUE === 0
       && Desc.WRITABLE === undefined && Desc.ENUMERABLE === undefined
       && Desc.CONFIGURABLE === undefined) {
 
@@ -2007,7 +2018,7 @@ function OBJECT_DEFINE_OWN_PROPERTY(O, P, Desc, Throw) {
    * current when compared using the SameValue algorithm (9.12).
    */
   // is this simple implementation OK? TODO
-  if (currObj.VALUE === Desc.VALUE && currObj.GET === Desc.GET
+  if (currObj.VALUE === Desc.VALUE && currObj.GET$ === Desc.GET$
       && currObj.SET === Desc.SET && currObj.WRITABLE === Desc.WRITABLE
       && currObj.ENUMERABLE === Desc.ENUMERABLE
       && currObj.CONFIGURABLE === Desc.CONFIGURABLE) {
@@ -3173,9 +3184,6 @@ functionProto.CALL = function(__VA_ARGS__) {
   /**
    * after the call, the return value is left on stack
    */
-  // var obj = getObject(MACHINE.TOS());
-  // MACHINE.pop();
-  // return obj;
 };
 
 var CH_13_02_01_CALL;
@@ -3230,10 +3238,39 @@ var CH_13_02_02_CONSTRUCT;
 /**
  * 
  */
-function FUNCTION_CONSTRUCT() {
+function FUNCTION_CONSTRUCT(F, __VA_ARGS__) {
 
-  var id = createObjectObject();
-};
+  var E;
+
+  var P = internFindConstantString("prototype");
+  E = GET$(F, P); // -- proto
+  if (E < 0) {
+    return E;
+  }
+
+  var id;
+  if (typeOfObject(MACHINE.TOS()) === OBJECT_TYPE) {
+    id = createObjectObject(MACHINE.TOS(), true);
+  }
+  else {
+    id = OBJECT_PROTO;
+  }
+
+  MACHINE.pop(); // proto --
+
+  // -- result
+  E = FUNCTION_CALL(F, id, __VA_ARGS__); // TODO replace with apply
+  if (E < 0) {
+    return E;
+  }
+
+  if (typeOfObject(MACHINE.TOS()) === OBJECT_TYPE) {
+    return ERR_NONE;
+  }
+
+  MACHINE.setTop(id);
+  return ERR_NONE;
+}
 
 functionProto.HAS_INSTANCE = function() {
 
@@ -3990,6 +4027,10 @@ RedbankVM.prototype.stepCall = function() {
   this.doReturn();
 };
 
+/**
+ * 
+ * @returns {Number}
+ */
 RedbankVM.prototype.stepCallExp = function() {
 
   var type = typeOfObject(this.TOS());
@@ -4185,10 +4226,6 @@ RedbankVM.prototype.step = function(code, bytecode) {
     this.pop();
     break;
 
-  // case "FETCHA": // addr -- obj
-  // this.fetcha();
-  // break;
-
   case "FETCHO": // parent, prop -- value
     this.fetcho();
     break;
@@ -4237,9 +4274,11 @@ RedbankVM.prototype.step = function(code, bytecode) {
     else if (bytecode.arg1 === "PROP") {
       this.push(createString(bytecode.arg2));
     }
-    else if (bytecode.arg1 === "GLOBAL") {
-      this.push(JS_GLOBAL);
-      this.push(createString(bytecode.arg2)); // string name
+    else if (bytecode.arg1 === "IMPLICIT") {
+
+      // see 10.2.2.1 GetIdentifierReference (lex, name, strict)
+      this.push(createReferenceType(JS_GLOBAL, createString(bytecode.arg2),
+          true));
     }
     else if (bytecode.arg1 === "CATCH") {
       this.push(createAddr(ADDR_CATCH, bytecode.arg2));

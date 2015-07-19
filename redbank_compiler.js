@@ -177,96 +177,6 @@ var esutils = require('esutils');
 
 var silent = true;
 
-var expectRValue = [ {
-  parent : "AssignmentExpression",
-  prop : "right"
-}, {
-  parent : "BinaryExpression"
-}, {
-  parent : "CallExpression",
-}, {
-  parent : "MemberExpression",
-  prop : "object"
-}, {
-  parent : "ReturnStatement",
-  prop : "argument"
-}, {
-  parent : "VariableDeclarator",
-  prop : "init"
-} ];
-
-/**
- * This function tells if current expr should be evaluated as address or value
- * 
- * @param expr
- *          an expression ast node
- * @returns {Boolean} true if expr should be evaluated as value.
- */
-function exprAsVal(expr) {
-
-  var parent = expr.__parent__;
-  var pt = parent.type;
-
-  if (pt === "AssignmentExpression") {
-    if (expr === parent.left) {
-      return false;
-    }
-    else if (expr === parent.right) {
-      return true;
-    }
-    else {
-      throw "Unknown role for " + pt;
-    }
-
-  }
-  else if (pt === "MemberExpression") {
-    if (expr === parent.object) {
-      return true;
-    }
-    else if (expr === parent.property) {
-      return false;
-    }
-    else {
-      throw "Unknown role for " + pt;
-    }
-  }
-  else if (pt === "BinaryExpression") {
-    return true;
-  }
-  else if (pt === "VariableDeclarator") {
-    if (expr === parent.id) {
-      return false;
-    }
-    else if (expr === parent.init) {
-      return true;
-    }
-    else {
-      throw "error";
-    }
-  }
-  else if (pt === "CallExpression") {
-    return true; // TODO need check error
-  }
-  else if (pt === "ReturnStatement") {
-    if (expr === parent.argument) {
-      return true;
-    }
-    else {
-      throw "error";
-    }
-
-  }
-  else if (pt === "Property") {
-
-  }
-  else if (pt === "NewExpression") {
-    
-  }
-  else {
-    console.log("exprAsVal: " + pt + " not supported yet");
-    throw "error";
-  }
-}
 
 /**
  * Visit function node, apply pre or post on node
@@ -1152,10 +1062,6 @@ FunctionNode.prototype.compileIdentifier = function(ast) {
       if (ast.name === x.__parent__.param.name) {
 
         this.emit('LITA', 'CATCH', depth);
-
-//        if (exprAsVal(ast)) {
-//          this.emit('FETCHA');
-//        }
         return;
       }
       depth++;
@@ -1182,19 +1088,16 @@ FunctionNode.prototype.compileIdentifier = function(ast) {
         this.emit('LITA', 'LEXICAL', index);
       }
       else {
-        this.emit('LITA', 'GLOBAL', ast.name);
-
-        if (exprAsVal(ast)) {
-          this.emit("FETCHO");
-        }
-        return;
+        
+        /**
+         * By 'implicit', it means the lookup should be performed on 
+         * implicitly created globals, aka, built-in
+         */
+        // see 10.2.2.1 GetIdentifierReference (lex, name, strict)
+        this.emit('LITA', 'IMPLICIT', ast.name);
       }
     }
   }
-
-//  if (exprAsVal(ast)) {
-//    this.emit("FETCHA");
-//  }
 };
 
 // interface IfStatement <: Statement {
@@ -1253,15 +1156,47 @@ FunctionNode.prototype.compileMemberExpression = function(ast) {
 // arguments: [ Expression ];
 // }
 FunctionNode.prototype.compileNewExpression = function(ast) {
-  
-  this.compileAST(ast.callee);
-  this.emit("GETVAL");
-  this.emit("LITN", 1);
-  for (var i = 0; i < ast.arguments.length; i++) {
-    this.compileAST(ast.arguments[i]);
+
+  /**
+   * 11.2.2 The new Operator
+   * 
+   * new NewExpression or new MemberExpression Argument
+   */  
+  var isMemberExpression = false;
+  if (ast.callee.type === "MemberExpression") {
+    isMemberExpression = true;
   }
-  this.emit("LITC", ast.arguments.length);
-  this.emit("NEWEXP");
+  
+  this.compileAST(ast.callee);  
+  this.emit("GETVAL");
+  
+  if (isMemberExpression === false) { // is NewExpression
+    this.emit("NEWOP", false);
+    
+    /*-
+     * Stack:
+     * 
+     * function object (supposedly)
+     */
+  }
+  else {  // is MemberExpression
+    this.emit("LITN", 1);
+    for (var i = 0; i < ast.arguments.length; i++) {
+      this.compileAST(ast.arguments[i]);
+    }
+    this.emit("LITC", ast.arguments.length);
+    this.emit("NEWOP", true);
+    
+    /*-
+     * Stack:
+     * 
+     * ARGC
+     * ARG[ARGC - 1]
+     * ...
+     * ARG[0]
+     * function object
+     */
+  }
 };
 
 // interface ObjectExpression <: Expression {
